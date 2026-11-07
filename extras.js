@@ -13,7 +13,7 @@
   /* ------------------------------------------------------------------ update log */
   const LOG = [
     { id: 'u11', date: '2026-11-06', title: 'Checkmate puzzles, Pause and mod menu upgrades', items: [
-      'New Online mode in Classic: play a friend on another device. Make a private game and share the code, or post a public one for anyone. Timed (1 min, 3 min + 1, 5 min, 10 min) or unlimited, with resign, draw offers and rematch. If you do not tap anything for 30 seconds on your turn you are disconnected and lose',
+      'New Online mode in Classic: play a friend on another device. Make a private game and share the code, or post a public one for anyone. Timed (1 min, 3 min + 1, 5 min, 10 min) or unlimited, with resign, draw offers and rematch',
       'Bullet and Rapid now have a Pause button: the clock stops, the computer stops thinking and nobody can move until you tap Resume',
       'Checkmate puzzles now ask a second question: mate in how many moves. Easy is 1 or 2, Normal 1 to 3, Hard 2 to 5, and the new Insane is 2 to 8',
       'Difficulty now also sets how busy the board looks: Easy has only a few pieces, Insane has a crowded board',

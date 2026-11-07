@@ -4,8 +4,9 @@
  *
  *   - Create a game (timed or unlimited, private code or public list), join with a code, or pick an open game.
  *   - Each player's browser checks every move it receives, so the server never needs to know the rules.
- *   - Idle rule: if it is your turn and you do not tap anything for 30 seconds you are disconnected and lose.
- *     The other side also wins if your browser stops answering the server for 30 seconds.
+ *   - No idle rule: take as long as you like to move. The other side only wins if your browser stops answering
+ *     the server for 30 seconds (the page was closed).
+ *   - Fast updates: polls are held open by the server and answer the moment something changes.
  *   - Resign, draw offers and rematches go through the same server.
  */
 (() => {
@@ -13,7 +14,7 @@
   const LP = window.LP;
   const $ = (q) => document.querySelector(q);
   const IDLE_MS = 30000;
-  const POLL_MS = 2000;
+  const POLL_MS = 100;     // gap between polls (the server holds each one open until there is news)
   const TIMES = [[60, 0, '1 minute'], [180, 1, '3 minutes + 1'], [300, 0, '5 minutes'], [600, 0, '10 minutes']];
   const esc = (t) => LP.esc(String(t == null ? '' : t));
   const url = () => (window.ONLINE_URL || '').trim();
@@ -27,7 +28,10 @@
     return fetch(url(), { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) }).then((r) => r.json());
   }
   function rawGet(params) {
-    return fetch(url() + (url().includes('?') ? '&' : '?') + new URLSearchParams(Object.assign({ _: Date.now() }, params))).then((r) => r.json());
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 20000);   // a hung request must not stop the polling
+    return fetch(url() + (url().includes('?') ? '&' : '?') + new URLSearchParams(Object.assign({ _: Date.now() }, params)), { signal: ctl.signal })
+      .then((r) => r.json()).finally(() => clearTimeout(t));
   }
   /** Writes go one after another (a move must reach the server before the result), and are retried if the connection drops. */
   function post(body, tries) {
@@ -50,8 +54,6 @@
   /* ------------------------------------------------------------------ state */
   let net = null;      // the game in progress: { id, tok, me, n, timer, ... }
   let wait = null;     // a game we made that is waiting for someone to join
-  let lastActive = Date.now();
-  ['pointerdown', 'keydown', 'touchstart'].forEach((ev) => document.addEventListener(ev, () => { lastActive = Date.now(); }, true));
 
   function stopAll() {
     if (net) clearTimeout(net.timer);
@@ -98,7 +100,7 @@
     LP.openSheet(`<h2>Create a game<span class="sub">How should the clock work?</span></h2>
       <div class="stack">
         <button class="btn big" id="k-t"><b>Timed</b><small>Pick a time for each side.</small></button>
-        <button class="btn big" id="k-u"><b>Unlimited</b><small>No clock. You still need to move within 30 seconds.</small></button>
+        <button class="btn big" id="k-u"><b>Unlimited</b><small>No clock. Take as long as you like.</small></button>
         <div class="row"><button class="btn" id="k-b">Back</button><button class="btn" id="k-x">Cancel</button></div>
       </div>`, true);
     $('#k-t').onclick = askTime;
@@ -157,13 +159,14 @@
     $('#wt-x').onclick = () => { const w = wait; stopAll(); if (w) post({ a: 'cancel', id: w.id, tok: w.tok }, 1); LP.closeSheet(); };
     const loop = async () => {
       if (!wait || wait.id !== id) return;
-      const s = await get({ a: 'poll', id, tok, since: 0 });
+      const s = await get({ a: 'poll', id, tok, since: 0, wait: 1, u: wait.u || '' });
       if (!wait || wait.id !== id) return;
       if (s && s.status === 'active' && s.you) { stopAll(); begin(id, tok, s); return; }
       if (s && (s.status === 'cancelled' || s.status === 'expired')) { stopAll(); LP.closeSheet(); return; }
-      wait.timer = setTimeout(loop, POLL_MS);
+      if (s && s.upd) wait.u = s.upd;
+      wait.timer = setTimeout(loop, s && s.error ? 1500 : POLL_MS);
     };
-    wait.timer = setTimeout(loop, 600);
+    wait.timer = setTimeout(loop, 300);
   }
 
   function joinSheet(msg) {
@@ -203,32 +206,31 @@
   /* -------------------------------------------------------------- the game */
   function begin(id, tok, s) {
     stopAll();
-    net = { id, tok, me: s.you, n: 0, timer: 0, drawShown: false, offered: false, rematchShown: false, warned: false, over: false, busy: false, overPolls: 0 };
+    net = { id, tok, me: s.you, n: 0, timer: 0, drawShown: false, offered: false, rematchShown: false, over: false, busy: false, overPolls: 0 };
     LP.chessOnline.start({ id, me: s.you, names: s.names, base: s.mode === 'timed' ? s.base : 0, inc: s.inc });
-    lastActive = Date.now();
     // moves already on the server (a game joined late) are applied straight away
     onState(s, 0);
     schedule();
   }
 
-  function schedule() {
+  function schedule(ms) {
     if (!net) return;
     clearTimeout(net.timer);
-    net.timer = setTimeout(pollOnce, POLL_MS);
+    net.timer = setTimeout(pollOnce, ms == null ? POLL_MS : ms);
   }
 
   async function pollOnce() {
     const my = net;
     if (!my) return;
-    if (my.busy) { schedule(); return; }
+    if (my.busy) { schedule(500); return; }
     if (my.over && ++my.overPolls > 60) return;   // a finished game is only watched for a rematch for a few minutes
     my.busy = true;
     const since = my.n;
-    const s = await get({ a: 'poll', id: my.id, tok: my.tok, since });
+    const s = await get({ a: 'poll', id: my.id, tok: my.tok, since, wait: 1, u: my.u || '' });
     my.busy = false;
     if (net !== my) return;
-    if (s && !s.error) onState(s, since);
-    schedule();
+    if (s && !s.error) { if (s.upd) my.u = s.upd; onState(s, since); }
+    schedule(s && s.error ? 1500 : POLL_MS);
   }
 
   function loserOf(me) { return me === 'w' ? '0-1' : '1-0'; }
@@ -245,7 +247,7 @@
         if (!co.apply(s.moves[i])) { illegal(); return; }
         net.n++; got++;
       }
-      if (got) { if (s.mode === 'timed') co.setClocks(s.clocks); lastActive = Date.now(); net.warned = false; }
+      if (got && s.mode === 'timed') co.setClocks(s.clocks);
     }
     if (s.result && co.state().phase === 'play') { net.over = true; co.remoteEnd(s.result, s.reason); }
     if (s.status === 'over') net.over = true;
@@ -283,20 +285,6 @@
     co.remoteEnd(me === 'w' ? '1-0' : '0-1', 'illegal');
   }
 
-  // 30 seconds without a tap on your own turn: you are disconnected
-  setInterval(() => {
-    if (!net || net.over) return;
-    const co = LP.chessOnline, st = co.state();
-    if (st.phase !== 'play' || st.turn !== net.me) { net.warned = false; return; }
-    const idle = Date.now() - lastActive;
-    if (idle > IDLE_MS - 10000 && !net.warned) { net.warned = true; co.toast('Move within 10 seconds or you will be disconnected.'); }
-    if (idle > IDLE_MS) {
-      net.over = true;
-      post({ a: 'end', id: net.id, tok: net.tok, reason: 'idle' }, 3);
-      co.remoteEnd(loserOf(net.me), 'idle');
-    }
-  }, 1000);
-
   /* ---------------------------------------------- calls made by the game */
   async function rematch() {
     if (!net) return;
@@ -319,7 +307,6 @@
       post({ a: 'move', id: net.id, tok: net.tok, ply, mv: uci, clocks }).then((r) => {
         if (r && r.error && net) LP.chessOnline.toast('Move not saved: ' + r.error);
       });
-      lastActive = Date.now();
     },
     report(result, type) {
       if (!net || net.over) return;
