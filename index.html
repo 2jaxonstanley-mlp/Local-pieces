@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f1f1f">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Local Pieces</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css?v=52">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Carlito is the open Calibri look-alike, used when Calibri isn't installed -->
+  <link href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="app">
+
+    <!-- MENU -->
+    <section id="menu" class="page active">
+      <div class="menu-top">
+        <button id="settings-btn" class="icon-btn" aria-label="Settings" title="Settings">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <button id="news-btn" class="icon-btn" aria-label="Update log" title="Update log">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 10h16M4 15h10M4 20h7"/></svg>
+        </button>
+        <button id="acct" class="acct" aria-label="Your profile"><span class="acct-av" id="acct-av">?</span><span class="acct-tx"><b id="acct-name">Set name</b><small id="acct-elo">Tap to set up</small></span></button>
+      </div>
+      <div class="menu-inner">
+        <header class="hero">
+          <img class="hero-logo" src="logo.png" width="96" height="96" alt="" aria-hidden="true">
+          <h1 class="logo">Local Pieces</h1>
+          <p class="tagline">Chess, your way.</p>
+        </header>
+
+        <button id="continue-btn" class="mode continue hidden">
+          <span class="mode-ic" aria-hidden="true"><i class="ic-play"></i></span>
+          <span class="mode-text">
+            <span id="continue-name" class="mode-name">Continue playing</span>
+            <span id="continue-desc" class="mode-desc"></span>
+            <span id="continue-prog" class="mode-desc continue-prog"></span>
+          </span>
+          <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+        </button>
+        <button id="saves-btn" class="mode saves hidden" style="--accent:#8fc15b">
+          <span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+          <span class="mode-text">
+            <span class="mode-name">Saved games</span>
+            <span id="saves-desc" class="mode-desc"></span>
+          </span>
+          <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+        </button>
+
+        <section class="mgrp closed" data-g="classic">
+          <button class="mgrp-h" type="button" aria-expanded="false"><span class="mgrp-t">Classic</span><span class="mgrp-s">Untimed and timed chess</span><i class="mgrp-chev" aria-hidden="true"></i></button>
+          <div class="mgrp-b"><div class="modes">
+          <button class="mode" data-mode="basic" style="--accent:#8fc15b">
+            <span class="mode-ic" aria-hidden="true"><i class="ic-sp" style="--i:3"></i></span>
+            <span class="mode-text">
+              <span class="mode-name">Classic</span>
+              <span class="mode-desc">The classic game of chess, no clock.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="bullet" style="--accent:#ffd35a">
+            <span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Bullet</span>
+              <span class="mode-desc">1 or 3 minutes each, no extra time.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="rapid" style="--accent:#5ec8c0">
+            <span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Rapid</span>
+              <span class="mode-desc">5 or 10 minutes each, plus 2 seconds every move.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="online" style="--accent:#7bd88f">
+            <span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Online</span>
+              <span class="mode-desc">Play a friend on another device, timed or unlimited.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="tas" style="--accent:#5ab0ff">
+            <span class="mode-ic" aria-hidden="true"><i class="ic-sp" style="--i:5"></i></span>
+            <span class="mode-text">
+              <span class="mode-name">Sandbox</span>
+              <span class="mode-desc">Play the computer with hints, undo and both sides.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          </div></div>
+        </section>
+        <section class="mgrp closed" data-g="custom">
+          <button class="mgrp-h" type="button" aria-expanded="false"><span class="mgrp-t">Custom</span><span class="mgrp-s">Chess with a twist</span><i class="mgrp-chev" aria-hidden="true"></i></button>
+          <div class="mgrp-b"><div class="modes">
+          <button class="mode" data-mode="secret" style="--accent:#b48cf2">
+            <span class="mode-ic" aria-hidden="true"><i class="ic-sp" style="--i:2"></i></span>
+            <span class="mode-text">
+              <span class="mode-name">Secret Queen</span>
+              <span class="mode-desc">Every player hides a secret in their army.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="snail" style="--accent:#9bd36b">
+            <span class="mode-ic" aria-hidden="true"><i class="ic-snail"></i></span>
+            <span class="mode-text">
+              <span class="mode-name">Immortal Snail</span>
+              <span class="mode-desc">A snail hunts each king. You can't stop it.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="gamble" style="--accent:#e5b93c">
+            <span class="mode-ic" aria-hidden="true"><i class="ic-dice"></i></span>
+            <span class="mode-text">
+              <span class="mode-name">Gamblite Chess</span>
+              <span class="mode-desc">Every turn is rolled. Move twice and the odds turn on you.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="guess" style="--accent:#c9a0ff">
+            <span class="mode-ic" aria-hidden="true"><i class="ic-guess"></i></span>
+            <span class="mode-text">
+              <span class="mode-name">Guess Who Chess</span>
+              <span class="mode-desc">Hidden pieces. Ask questions and find their secret piece.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="royale" style="--accent:#e8607a">
+            <span class="mode-ic" aria-hidden="true"><i class="ic-royale"></i></span>
+            <span class="mode-text">
+              <span class="mode-name">Chess Royale</span>
+              <span class="mode-desc">Start with a king. Spend elixir to spawn your army.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="rush" style="--accent:#ff9a4d">
+            <span class="mode-ic" aria-hidden="true"><i class="ic-sp" style="--i:4"></i></span>
+            <span class="mode-text">
+              <span class="mode-name">Capture Rush</span>
+              <span class="mode-desc">Beat the clock and capture as much as you can.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="hockey" style="--accent:#ff6b8a">
+            <span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><circle cx="12" cy="12" r="2.5"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Chess x Air Hockey</span>
+              <span class="mode-desc">Queens against queens, with a puck. First to 7.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          </div></div>
+        </section>
+        <section class="mgrp closed" data-g="train">
+          <button class="mgrp-h" type="button" aria-expanded="false"><span class="mgrp-t">Train</span><span class="mgrp-s">Get better</span><i class="mgrp-chev" aria-hidden="true"></i></button>
+          <div class="mgrp-b"><div class="modes">
+          <button class="mode" data-mode="popular" style="--accent:#ffb347">
+            <span class="mode-ic" aria-hidden="true"><i class="ic-sp" style="--i:4"></i></span>
+            <span class="mode-text">
+              <span class="mode-name">Popular puzzles</span>
+              <span class="mode-desc">Famous positions to solve against the Insane computer.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="puzzle" style="--accent:#f2c45a">
+            <span class="mode-ic" aria-hidden="true"><i class="ic-sp" style="--i:0"></i></span>
+            <span class="mode-text">
+              <span class="mode-name">Puzzles</span>
+              <span class="mode-desc">Sharpen your tactics with a fresh challenge every time.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="solo" style="--accent:#6ee7a8">
+            <span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Solo Chess</span>
+              <span class="mode-desc">Perfect Run: 30 capture puzzles against the clock.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="analyze" style="--accent:#7cc4ff">
+            <span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M8 11h6M11 8v6"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Analyze</span>
+              <span class="mode-desc" id="analyze-desc">Review your games and learn from every mistake.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="history" style="--accent:#c9a0ff">
+            <span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Match history</span>
+              <span class="mode-desc" id="history-desc">Watch your last 50 games again, move by move.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="editor" style="--accent:#ff9ad5">
+            <span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Position editor</span>
+              <span class="mode-desc">Set up any position, then play it or save it.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          </div></div>
+        </section>
+        <section class="mgrp closed" data-g="rewards">
+          <button class="mgrp-h" type="button" aria-expanded="false"><span class="mgrp-t">Rewards</span><span class="mgrp-s">Tokens and cosmetics</span><i class="mgrp-chev" aria-hidden="true"></i></button>
+          <div class="mgrp-b"><div class="modes">
+          <button class="mode" data-mode="tasks" style="--accent:#3fbfa3">
+            <span class="mode-ic" aria-hidden="true"><i class="ic-check"></i></span>
+            <span class="mode-text">
+              <span class="mode-name">Daily &amp; Weekly Tasks</span>
+              <span class="mode-desc" id="tasks-desc">Complete tasks to earn tokens.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="shop" style="--accent:#f5a623">
+            <span class="mode-ic" aria-hidden="true"><i class="ic-gem"></i></span>
+            <span class="mode-text">
+              <span class="mode-name">Shop</span>
+              <span class="mode-desc" id="shop-desc">Spend tokens on crates.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          </div></div>
+        </section>
+        <section class="mgrp closed" data-g="progress">
+          <button class="mgrp-h" type="button" aria-expanded="false"><span class="mgrp-t">Progress</span><span class="mgrp-s">Your numbers</span><i class="mgrp-chev" aria-hidden="true"></i></button>
+          <div class="mgrp-b"><div class="modes">
+          <button class="mode" data-mode="board" style="--accent:#e8c14a">
+            <span class="mode-ic" aria-hidden="true"><i class="ic-star"></i></span>
+            <span class="mode-text">
+              <span class="mode-name">Stats</span>
+              <span class="mode-desc">Ratings, results, puzzles, Rush and your records.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          </div></div>
+        </section>
+        <section class="mgrp closed" data-g="more">
+          <button class="mgrp-h" type="button" aria-expanded="false"><span class="mgrp-t">More</span><span class="mgrp-s">Feedback</span><i class="mgrp-chev" aria-hidden="true"></i></button>
+          <div class="mgrp-b"><div class="modes">
+          <button class="mode" data-mode="suggest" style="--accent:#ff9ecb">
+            <span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.5 7.2L3 21l1.8-5.5A8 8 0 1 1 21 12z"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Suggestions</span>
+              <span class="mode-desc">Tell me what to add or fix.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          </div></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- SUGGESTIONS -->
+    <section id="suggest" class="page">
+      <header class="game-header">
+        <button id="sg-back" class="text-btn" aria-label="Back to menu">&larr; Menu</button>
+        <span class="pz-head"><span class="mode-title">Suggestions</span></span>
+        <span class="header-spacer"></span>
+      </header>
+      <div class="lb-wrap">
+        <p class="sg-lead">Got an idea, found a bug, or want a new skin or game mode? Tell me. Write it below, then post it.</p>
+        <label for="sg-text" class="sg-label">Your suggestion</label>
+        <textarea id="sg-text" class="sg-text" rows="6" maxlength="1500" placeholder="What should I add or fix?"></textarea>
+        <div class="stack">
+          <a id="sg-gh" class="btn primary big sg-btn" target="_blank" rel="noopener">Post it on GitHub Issues</a>
+        </div>
+        <p class="lb-hint">GitHub needs a free account.</p>
+      </div>
+    </section>
+
+    <!-- GAME -->
+    <section id="game" class="page">
+      <header class="game-header">
+        <button id="back-btn" class="text-btn" aria-label="Back to menu">&larr; Menu</button>
+        <span id="mode-title" class="mode-title">Classic</span>
+        <span class="header-spacer"></span>
+      </header>
+
+      <div class="layout">
+        <div class="board-col">
+          <div class="player-bar" id="top-bar">
+            <span class="dot" id="top-dot"></span>
+            <span class="pname" id="top-name"></span>
+            <span class="pclock hidden" id="top-clock"></span>
+            <span class="captured" id="top-captured"></span>
+          </div>
+
+          <div class="board-wrap">
+            <div id="board" class="board"></div>
+            <div id="cover" class="cover hidden"></div>
+            <div id="toast" class="toast" role="status"></div>
+          </div>
+
+          <div class="player-bar" id="bottom-bar">
+            <span class="dot" id="bottom-dot"></span>
+            <span class="pname" id="bottom-name"></span>
+            <span class="pclock hidden" id="bottom-clock"></span>
+            <span class="captured" id="bottom-captured"></span>
+          </div>
+
+        </div>
+
+        <div class="panel">
+          <div id="status" class="status">&nbsp;</div>
+          <div id="rating-line" class="rating-line hidden"></div>
+          <button id="snail-info" class="snail-info hidden" type="button" aria-label="Immortal Snail rules"></button>
+          <button id="odds" class="odds hidden" type="button" aria-label="Gamblite odds and rules">
+            <span class="od-top"><span class="od-t">Next roll</span><span id="od-roll" class="od-roll"></span></span>
+            <span class="od-bar"><i id="od-w" class="od-w"><b id="od-wp">50%</b></i><i id="od-b" class="od-b"><b id="od-bp">50%</b></i></span>
+            <span id="od-hint" class="od-hint"></span>
+          </button>
+
+          <div id="royale" class="royale hidden">
+            <button id="ry-top" class="ry-top" type="button" aria-label="Chess Royale rules">
+              <span class="ry-el" id="ry-w"><span class="ry-nm"></span><span class="ry-bar"></span><b>0</b></span>
+              <span class="ry-el" id="ry-b"><span class="ry-nm"></span><span class="ry-bar"></span><b>0</b></span>
+            </button>
+            <div id="ry-tray" class="ry-tray"></div>
+            <div id="ry-hint" class="ry-hint"></div>
+          </div>
+
+          <!-- Guess Who: ask a question, colour marks -->
+          <div id="gw-bar" class="gw-bar hidden">
+            <button id="gw-ask" class="btn primary">Ask a question</button>
+            <button id="gw-skip" class="btn primary">Back to questions</button>
+            <span id="gw-marks" class="gw-marks" role="group" aria-label="Colour marks for enemy pieces">
+              <button class="mk" data-mk="r" aria-label="Red: not the piece"></button>
+              <button class="mk" data-mk="b" aria-label="Blue: could be the piece"></button>
+              <button class="mk" data-mk="g" aria-label="Green: strong suspicion"></button>
+              <button class="mk" data-mk="y" aria-label="Yellow: uncertain"></button>
+              <button class="mk" data-mk="x" aria-label="Clear a mark">&times;</button>
+            </span>
+            <button id="gw-rules" class="btn icon" aria-label="Guess Who rules">?</button>
+          </div>
+
+          <!-- secret queen pick bar -->
+          <div id="pick-bar" class="pick-bar hidden">
+            <button id="pick-confirm" class="btn primary" disabled>Confirm</button>
+          </div>
+
+          <!-- Guess Who: arrange your pieces -->
+          <div id="arr-bar" class="arr-bar hidden">
+            <button id="arr-std" class="btn">Standard</button>
+            <button id="arr-rnd" class="btn">Shuffle</button>
+            <button id="arr-ok" class="btn primary">Done</button>
+          </div>
+
+          <!-- live game controls -->
+          <div id="controls" class="controls">
+            <button id="flip-btn" class="btn">Flip</button>
+            <button id="queen-btn" class="btn hidden" aria-pressed="false">Show queen</button>
+            <button id="undo-btn" class="btn">Undo</button>
+            <button id="redo-btn" class="btn">Redo</button>
+            <button id="hint-btn" class="btn hidden">Hint</button>
+            <button id="pause-btn" class="btn hidden">Pause</button>
+            <button id="both-btn" class="btn hidden" aria-pressed="false">Both sides</button>
+            <button id="forfeit-btn" class="btn hidden">Forfeit</button>
+        <button id="draw-btn" class="btn hidden">Offer draw</button>
+            <button id="save-btn" class="btn hidden">Save Sandbox</button>
+            <button id="reset-btn" class="btn">New game</button>
+          </div>
+
+          <!-- replay controls -->
+          <div id="replay-controls" class="replay-controls hidden">
+            <input id="scrub" type="range" min="0" max="0" value="0" aria-label="Replay position">
+            <div class="replay-row">
+              <button id="rp-start" class="btn icon" aria-label="Start">&#9198;&#xFE0E;</button>
+              <button id="rp-prev" class="btn icon" aria-label="Previous move">&#9664;&#xFE0E;</button>
+              <button id="rp-play" class="btn primary play" aria-label="Play or pause">Play</button>
+              <button id="rp-next" class="btn icon" aria-label="Next move">&#9654;&#xFE0E;</button>
+              <button id="rp-end" class="btn icon" aria-label="End">&#9197;&#xFE0E;</button>
+              <button id="rp-speed" class="btn speed" aria-label="Speed">1x</button>
+              <span id="rp-time" class="rp-time dim hidden"></span>
+            </div>
+            <div class="replay-row"><button id="rp-export" class="btn" aria-label="Export the board position (pause first)">Export board</button></div>
+            <button id="rp-exit" class="btn wide">Close replay</button>
+          </div>
+        </div>
+
+        <aside class="side">
+          <h3>Moves</h3>
+          <div class="moves-scroll" id="moves-scroll">
+            <div id="move-list" class="move-list"></div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- CAPTURE RUSH -->
+    <section id="rush" class="page">
+      <header class="game-header">
+        <button id="rush-back" class="text-btn" aria-label="Back to menu">&larr; Menu</button>
+        <span class="mode-title">Capture Rush</span>
+        <span class="header-spacer"></span>
+      </header>
+      <div class="layout">
+        <div class="board-col">
+          <div class="rush-hud">
+            <span id="rush-time" class="rush-time">2:30</span>
+            <span class="rush-scorebox"><span id="rush-score" class="rush-score">0</span><span id="rush-score-label" class="rush-score-label">points</span></span>
+          </div>
+          <div class="rush-bar"><div id="rush-fill" class="rush-fill"></div></div>
+          <div class="player-bar" id="rush-top">
+            <span class="dot b"></span>
+            <span class="pname" id="rush-top-name"></span>
+            <span class="captured" id="rush-top-captured"></span>
+          </div>
+          <div class="board-wrap">
+            <div id="rush-board" class="board"></div>
+            <div id="rush-toast" class="toast" role="status"></div>
+          </div>
+          <div class="player-bar" id="rush-bottom">
+            <span class="dot w"></span>
+            <span class="pname" id="rush-bottom-name"></span>
+            <span class="captured" id="rush-bottom-captured"></span>
+          </div>
+          <div id="rush-status" class="status">&nbsp;</div>
+          <div class="controls"><button id="rush-reset" class="btn">New round</button></div>
+          <div id="rush-replay" class="replay-controls hidden">
+            <input id="rush-scrub" type="range" min="0" max="0" value="0" aria-label="Replay position">
+            <div class="replay-row">
+              <button id="rr-start" class="btn icon" aria-label="Start">&#9198;&#xFE0E;</button>
+              <button id="rr-prev" class="btn icon" aria-label="Previous move">&#9664;&#xFE0E;</button>
+              <button id="rr-play" class="btn primary play" aria-label="Play or pause">Play</button>
+              <button id="rr-next" class="btn icon" aria-label="Next move">&#9654;&#xFE0E;</button>
+              <button id="rr-end" class="btn icon" aria-label="End">&#9197;&#xFE0E;</button>
+              <button id="rr-speed" class="btn speed" aria-label="Speed">1x</button>
+            </div>
+            <button id="rr-exit" class="btn wide">Close replay</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHESS x AIR HOCKEY -->
+    <section id="hockey" class="page">
+      <header class="game-header">
+        <button id="hk-back" class="text-btn" aria-label="Back to menu">&larr; Menu</button>
+        <span class="mode-title">Chess x Air Hockey</span>
+        <span class="header-spacer"></span>
+      </header>
+      <div class="layout">
+        <div class="board-col">
+          <div class="player-bar" id="hk-top-bar">
+            <span class="dot b"></span>
+            <span class="pname" id="hk-top-name"></span>
+            <span class="hk-score" id="hk-top-score">0</span>
+          </div>
+          <div class="board-wrap hk-wrap">
+            <div id="hk-board" class="board"></div>
+            <div id="hk-layer" class="hk-layer"></div>
+            <div id="hk-count" class="hk-count" aria-live="polite"></div>
+            <div id="hk-toast" class="toast" role="status"></div>
+          </div>
+          <div class="player-bar" id="hk-bottom-bar">
+            <span class="dot w"></span>
+            <span class="pname" id="hk-bottom-name"></span>
+            <span class="hk-score" id="hk-bottom-score">0</span>
+          </div>
+          <div id="hk-spd" class="hk-spd" aria-live="off"></div>
+          <div id="hk-status" class="status dim">&nbsp;</div>
+          <div class="controls hk-live"><button id="hk-pause" class="btn">Pause</button><button id="hk-reset" class="btn">New match</button></div>
+          <div class="hk-rp">
+            <div class="hk-rp-bar"><input id="hk-rp-scrub" type="range" min="0" max="100" value="0" aria-label="Replay position"><div id="hk-rp-marks" class="hk-rp-marks"></div></div>
+            <div class="hk-rp-row"><span id="hk-rp-time" class="dim">0:00 / 0:00</span><button id="hk-rp-play" class="btn">Pause</button><button id="hk-rp-speed" class="btn">1×</button><button id="hk-rp-exit" class="btn">Exit</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PUZZLES -->
+    <section id="puzzle" class="page">
+      <header class="game-header">
+        <button id="pz-back" class="text-btn" aria-label="Back to menu">&larr; Menu</button>
+        <span class="pz-head"><span class="pz-badge" aria-hidden="true">&#129513;&#xFE0E;</span><span id="pz-title" class="mode-title">Puzzle</span></span>
+        <span class="header-spacer"></span>
+      </header>
+      <div class="layout">
+        <div class="board-col">
+          <div class="board-wrap">
+            <div id="pz-board" class="board"></div>
+            <div id="pz-toast" class="toast" role="status"></div>
+          </div>
+          <div id="pz-status" class="status">&nbsp;</div>
+
+          <div class="pz-panel">
+            <div class="pz-panel-head"><span class="pz-badge sm" aria-hidden="true">&#129513;&#xFE0E;</span><span id="pz-kind">Puzzles</span><button id="pz-fav" class="pz-fav" style="margin-left:auto" aria-label="Add to favourites">&#9734;</button></div>
+            <div id="pz-why" class="pz-why hidden"></div>
+            <div id="pz-turn" class="pz-card pz-turn">
+              <span class="pz-sq" aria-hidden="true"></span>
+              <span class="pz-turn-text"><b id="pz-turn-t">White to Move</b><span id="pz-goal">&nbsp;</span></span>
+            </div>
+            <div class="pz-card pz-stats">
+              <div><span class="pz-lab">Difficulty</span><b id="pz-diff" class="pz-big">Normal</b></div>
+              <div class="r"><span class="pz-lab">Streak</span><b class="pz-big"><span class="pz-bolt" aria-hidden="true">&#9889;&#xFE0E;</span><span id="pz-streak">0</span></b></div>
+            </div>
+            <div id="pz-count" class="pz-count"></div>
+            <div class="pz-actions">
+              <button id="pz-hint" class="pz-act"><span aria-hidden="true">&#128161;&#xFE0E;</span>Hint</button>
+              <button id="pz-answer" class="pz-act"><span aria-hidden="true">&#128065;&#xFE0E;</span>Solution</button>
+            </div>
+            <div class="pz-actions small">
+              <button id="pz-undo" class="pz-act hidden">Undo</button>
+              <button id="pz-retry" class="pz-act">Retry</button>
+              <button id="pz-next" class="pz-act primary">New puzzle</button>
+            </div>
+            <p class="pz-note">Using a hint, the solution or a wrong move counts as a miss.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SOLO CHESS: PERFECT RUN -->
+    <section id="solo" class="page">
+      <header class="game-header">
+        <button id="so-back" class="text-btn" aria-label="Back to menu">&larr; Menu</button>
+        <span class="mode-title">Solo Chess</span>
+        <span class="header-spacer"></span>
+      </header>
+      <div id="so-intro" class="pp-wrap">
+        <h2 class="so-h">Perfect Run</h2>
+        <p class="pp-lead">Solve 30 Solo Chess puzzles as fast as you can. No hints, no undo, no restarts. The timer runs for the whole run.</p>
+        <ol class="so-rules">
+          <li>Capture a piece with every move until only one piece remains.</li>
+          <li>Each piece can capture a maximum of 2 times per puzzle.</li>
+          <li>If a king is on the board, it must be the final remaining piece.</li>
+          <li>Every piece looks the same, and any piece can capture any piece. Pawns capture diagonally, either way.</li>
+          <li>If you get stuck with two or more pieces left, that puzzle is lost. Wins and losses both move you on to the next puzzle.</li>
+        </ol>
+        <div class="so-bests"><p class="so-best" id="so-best"></p><p class="so-best so-botbest" id="so-botbest"></p></div>
+        <div class="so-btns"><button id="so-start" class="btn primary big" disabled>Getting puzzles ready…</button>
+        <button id="so-bot" class="btn big" disabled>0 players: watch the bot</button></div>
+      </div>
+      <div id="so-run" class="layout hidden">
+        <div class="board-col">
+          <div class="board-wrap"><div id="so-board" class="board"></div></div>
+          <div class="so-timebar"><span id="so-time" class="so-time">0:00.0</span><span id="so-mode" class="so-round"></span><span id="so-round" class="so-round"></span></div>
+          <div id="so-status" class="status">&nbsp;</div>
+          <div id="so-grid" class="so-grid"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- POPULAR PUZZLES -->
+    <section id="popular" class="page">
+      <header class="game-header">
+        <button id="pp-back" class="text-btn" aria-label="Back to menu">&larr; Menu</button>
+        <span class="mode-title">Popular puzzles</span>
+        <span class="header-spacer"></span>
+      </header>
+      <div class="pp-wrap">
+        <p class="pp-lead">You play the side to move. The computer is always Insane.</p>
+        <div id="pp-list" class="pp-list"></div>
+      </div>
+    </section>
+
+    <!-- DAILY TASKS -->
+    <section id="tasks" class="page">
+      <header class="game-header">
+        <button id="tk-back" class="text-btn" aria-label="Back to menu">&larr; Menu</button>
+        <span class="pz-head"><span class="pz-badge tk" aria-hidden="true"><i class="ic-check"></i></span><span class="mode-title">Tasks</span></span>
+        <span class="header-spacer"></span>
+      </header>
+      <div class="lb-wrap">
+        <div class="tk-tokens"><span class="coin big" aria-hidden="true"><i></i></span><span><small>Your tokens</small><b id="tk-tokens">0</b></span><button id="tk-shop" class="btn">Shop</button></div>
+        <div id="tk-tabs" class="sh-tabs tk-tabs" role="tablist"></div>
+        <p id="tk-reset" class="tk-reset"></p>
+        <div id="tk-list"></div>
+        <p class="lb-hint">Games against the computer and friends all count. Spend your tokens on crates in the Shop.</p>
+      </div>
+    </section>
+
+    <!-- SHOP -->
+    <section id="shop" class="page">
+      <header class="game-header">
+        <button id="sh-back" class="text-btn" aria-label="Back to menu">&larr; Menu</button>
+        <span class="pz-head"><span class="crate mini" data-c="piece"></span><span class="mode-title">Shop</span></span>
+        <span class="header-spacer"></span>
+      </header>
+      <div class="lb-wrap">
+        <div class="tk-tokens"><span class="coin big" aria-hidden="true"><i></i></span><span><small>Your tokens</small><b id="sh-tokens">0</b></span></div>
+        <h2 class="menu-label">Crates</h2>
+        <div id="sh-list"></div>
+      </div>
+    </section>
+
+    <!-- LEADERBOARD -->
+    <section id="board" class="page">
+      <header class="game-header">
+        <button id="lb-back" class="text-btn" aria-label="Back to menu">&larr; Menu</button>
+        <span class="mode-title">Stats</span>
+        <span class="header-spacer"></span>
+      </header>
+      <div class="lb-wrap">
+        <div id="st-nav" class="lb-tabs st-nav" role="tablist"></div>
+        <div id="st-body" class="st-body"></div>
+        <div id="lb-records" class="hidden">
+          <div id="lb-tabs" class="lb-tabs"></div>
+          <div id="lb-chips" class="lb-chips"></div>
+          <div id="lb-body"></div>
+          <button id="lb-reset" class="btn wide lb-reset hidden">Reset leaderboard</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SHEET (names, hand-off, game over, save) -->
+    <div id="sheet-bg" class="sheet-bg hidden">
+      <div id="sheet" class="sheet" role="dialog" aria-modal="true"></div>
+    </div>
+  </div>
+
+  <script src="chess.js?v=31"></script>
+  <script src="book.js?v=1"></script>
+  <script src="guessq.js?v=1"></script>
+  <script src="ai.js?v=41"></script>
+  <script src="guessbot.js?v=4"></script>
+  <script src="app.js?v=45"></script>
+  <script src="export.js?v=2"></script>
+  <script src="prefs.js?v=1"></script>
+  <script src="history.js?v=8"></script>
+  <script src="saves.js?v=6"></script>
+  <script src="leaderboard.js?v=31"></script>
+  <script src="profile.js?v=26"></script>
+  <script src="hats.js?v=2"></script>
+  <script src="shop.js?v=38"></script>
+    <script src="stats.js?v=35"></script>
+  <script src="rush.js?v=25"></script>
+  <script src="puzzlegen.js?v=33"></script>
+  <script src="puzzlebank.js?v=3"></script>
+  <script src="ratings.js?v=32"></script>
+  <script src="puzzles.js?v=35"></script>
+  <script src="popular.js?v=3"></script>
+  <script src="drag.js?v=1"></script>
+  <script src="solocore.js?v=1"></script>
+  <script src="solo.js?v=2"></script>
+  <script src="analyzecore.js?v=1"></script>
+  <script src="explain.js?v=1"></script>
+  <script src="analyze.js?v=9"></script>
+  <script src="editor.js?v=3"></script>
+  <script src="mods.js?v=5"></script>
+  <script src="online-config.js?v=1"></script>
+  <script src="online.js?v=1"></script>
+  <script src="hockey.js?v=10"></script>
+  <script src="tutorial.js?v=5"></script>
+  <script src="extras.js?v=15"></script>
+  <script src="menu.js?v=3"></script>
+</body>
+</html>
