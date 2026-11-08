@@ -461,14 +461,18 @@
   function drawArrow(a) {
     const svg = $('#pz-arrow');
     if (!svg) return;
-    if (!a) { svg.innerHTML = ''; return; }
+    if (!a || !a.length) { svg.innerHTML = ''; return; }
+    const list = Array.isArray(a[0]) ? a : [a];
+    const op = list.length > 4 ? 0.7 : 0.9;
     const c = (q) => [(q & 7) + 0.5, 7 - (q >> 4) + 0.5];
-    const [x1, y1] = c(a[0]), [x2, y2] = c(a[1]);
-    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
-    const sx = x1 + ux * 0.3, sy = y1 + uy * 0.3, ex = x2 - ux * 0.1, ey = y2 - uy * 0.1;
-    const bx = ex - ux * 0.42, by = ey - uy * 0.42;
-    svg.innerHTML = `<line x1="${sx}" y1="${sy}" x2="${bx}" y2="${by}" stroke="#e5484d" stroke-width="0.17" stroke-linecap="round" opacity=".9"/>`
-      + `<polygon points="${ex},${ey} ${bx - uy * 0.27},${by + ux * 0.27} ${bx + uy * 0.27},${by - ux * 0.27}" fill="#e5484d" opacity=".9"/>`;
+    svg.innerHTML = list.map((ar) => {
+      const [x1, y1] = c(ar[0]), [x2, y2] = c(ar[1]);
+      const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+      const sx = x1 + ux * 0.3, sy = y1 + uy * 0.3, ex = x2 - ux * 0.1, ey = y2 - uy * 0.1;
+      const bx = ex - ux * 0.42, by = ey - uy * 0.42;
+      return `<line x1="${sx}" y1="${sy}" x2="${bx}" y2="${by}" stroke="#e5484d" stroke-width="0.17" stroke-linecap="round" opacity="${op}"/>`
+        + `<polygon points="${ex},${ey} ${bx - uy * 0.27},${by + ux * 0.27} ${bx + uy * 0.27},${by - ux * 0.27}" fill="#e5484d" opacity="${op}"/>`;
+    }).join('');
   }
   function showBubble(text, arrow) {
     const b = $('#pz-bubble');
@@ -499,18 +503,36 @@
       return { text: base + tail, arrow: [c.from, m.to] };
     }
     if (kind === 'mate') {
-      if (inChk) {
-        const em = g.legalMoves(), e = em.find((x) => (g.board[x.from] & 7) === 6) || em[0];
-        if (e) {
-          const isK = (g.board[e.from] & 7) === 6;
-          return { text: isK ? 'It is check, but the king escapes to ' + sqName(e.to) + '. Checkmate needs every escape covered.' : 'It is check, but Black can block with the ' + lc(g.board[e.from]) + ' on ' + sqName(e.to) + '. Checkmate needs a check nothing can stop.', arrow: [e.from, e.to] };
+      const X = left + 1;                      // the mate has to come within this many White moves, counting the bad one
+      const deep = left > 3;                   // too deep to test every reply quickly
+      if (inChk || (left > 0 && !deep)) {
+        // Every Black reply that gets away: it is not forced, and none of them lead to mate in X
+        const t0 = Date.now(), outs = [];
+        let partial = false;
+        for (const r of g.legalMoves()) {
+          if (left > 0 && !deep) {
+            if (Date.now() - t0 > 800) { partial = true; break; }
+            const san = PG.sanOf(g, r);
+            g.makeMove(r);
+            const mates = !!PG.findMateMove(g, left);
+            g.unmakeMove();
+            if (mates) continue;
+            outs.push({ r, san });
+          } else outs.push({ r, san: PG.sanOf(g, r) });
+        }
+        if (outs.length) {
+          const shown = outs.slice(0, 8).map((o) => o.san).join(', ') + (outs.length > 8 ? ' and ' + (outs.length - 8) + ' more' : '');
+          const ways = outs.length + (partial ? '+' : '') + (outs.length === 1 && !partial ? ' way out' : ' ways out');
+          let text;
+          if (left <= 0) text = 'It is check, but Black has ' + ways.replace(' ways out', ' legal replies').replace(' way out', ' legal reply') + ' (' + shown + '), so it is not checkmate.';
+          else if (deep) text = 'It is check, but Black can escape (' + shown + '). Checkmate needs every escape covered.';
+          else text = (inChk ? 'It is check, but it is not forced. ' : 'That is not forcing. ') + 'Black has ' + ways + ' (' + shown + '). None of them lead to mate in ' + X + '.';
+          return { text, arrow: outs.slice(0, 12).map((o) => [o.r.from, o.r.to]) };
         }
       }
       if (left <= 0) return { text: inChk ? 'That is not checkmate.' : 'That is not even check, so it cannot be mate. Look for the mating move.', arrow: null };
-      if (left > 3) return { text: 'Not the line. Look for a forcing check or capture first.', arrow: null };
-      const r = PG.bestDefence(g, left);
-      if (r) return { text: 'That does not force mate in time: Black can answer with ' + g.moveToSan(r) + '.', arrow: [r.from, r.to] };
-      return { text: 'That does not force checkmate in time.', arrow: null };
+      if (deep) return { text: 'Not the line. Look for a forcing check or capture first.', arrow: null };
+      return { text: 'That does not force mate in ' + X + '.', arrow: null };
     }
     if (kind === 'check') return { text: 'That checks, but it is not a safe check. Find a check that nothing can take.', arrow: null };
     if (kind === 'sac') return { text: 'Not the sacrifice. Look for a move that gives up material to win more back (or to force mate).', arrow: null };
