@@ -491,11 +491,15 @@
       </header>
       <div class="layout">
         <div class="board-col">
+          <div id="pz-bubble" class="pz-bubble hidden" role="status"><b>Not quite</b><span id="pz-bubble-t"></span></div>
           <div class="board-wrap">
             <div id="pz-board" class="board"></div>
+            <svg id="pz-arrow" class="pz-arrow" viewBox="0 0 8 8" aria-hidden="true"></svg>
             <div id="pz-toast" class="toast" role="status"></div>
           </div>
           <div id="pz-status" class="status">&nbsp;</div>
+          <div id="pz-fix" class="pz-fix hidden"><button id="pz-fundo" class="pz-act glow">Undo</button><button id="pz-fretry" class="pz-act">Retry</button></div>
+          <div id="pz-nav" class="pz-nav hidden"><button id="pz-nb" class="pz-act" aria-label="Back one move">&#9664;</button><span id="pz-nlabel">Start</span><button id="pz-nf" class="pz-act" aria-label="Forward one move">&#9654;</button></div>
 
           <div class="pz-panel">
             <div class="pz-panel-head"><span class="pz-badge sm" aria-hidden="true">&#129513;&#xFE0E;</span><span id="pz-kind">Puzzles</span><button id="pz-fav" class="pz-fav" style="margin-left:auto" aria-label="Add to favourites">&#9734;</button></div>
@@ -513,12 +517,16 @@
               <button id="pz-hint" class="pz-act"><span aria-hidden="true">&#128161;&#xFE0E;</span>Hint</button>
               <button id="pz-answer" class="pz-act"><span aria-hidden="true">&#128065;&#xFE0E;</span>Solution</button>
             </div>
+            <div id="pz-an-row" class="pz-actions hidden">
+              <button id="pz-analysis" class="pz-act hidden">Analysis</button>
+              <button id="pz-exit" class="pz-act hidden">Exit Analysis</button>
+            </div>
             <div class="pz-actions small">
               <button id="pz-undo" class="pz-act hidden">Undo</button>
               <button id="pz-retry" class="pz-act">Retry</button>
               <button id="pz-next" class="pz-act primary">New puzzle</button>
             </div>
-            <p class="pz-note">Using a hint, the solution or a wrong move counts as a miss.</p>
+            <p class="pz-note">Using a hint, the solution or a wrong move counts as a miss. Analysis opens once a puzzle is finished.</p>
           </div>
         </div>
       </div>

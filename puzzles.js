@@ -1,6 +1,8 @@
 /**
  * Puzzle screen: Checkmate (pick the difficulty, then how many moves to mate, 1 to 8), Check (safe check within N moves; Black replies),
  * Best move and Sacrifice (Easy / Normal / Hard each). The positions come from puzzlegen.js. Progress is saved so the menu can offer "Continue playing".
+ * A bad move stays on the board with a speech bubble (and a red arrow when Black can punish it) until you press Undo or Retry.
+ * After a puzzle is finished, failed or its solution shown, Analysis lets you move both sides, step through the line and try what-ifs.
  */
 (() => {
   'use strict';
@@ -20,7 +22,9 @@
   let sel = -1, targets = [];
   let log = [];            // committed moves (and Black's replies), for saving
   let busy = false;        // generating, or Black is replying, or a wrong move is being taken back
-  let state = 'idle';      // gen | play | failed | solved
+  let state = 'idle';      // gen | play | wrong (bad move shown, waiting for Undo/Retry) | failed | solved | analysis
+  let bad = null;          // the bad move that is still on the board (state 'wrong')
+  let an = null;           // analysis: { line: [moves from the start], sans: [], idx, why }
   let userMoves = 0;
   let snaps = [];          // check puzzles: board before each of your moves (for Undo)
   let hints = [];          // squares to highlight
@@ -73,7 +77,8 @@
 
   function render() {
     const legal = new Set(targets.map((m) => m.to));
-    const chk = g.inCheck(0x10) && state !== 'gen' ? g.kingSquare(0x10) : -1;
+    const side = state === 'analysis' ? g.turn : 0x10;
+    const chk = state !== 'gen' && g.inCheck(side) ? g.kingSquare(side) : -1;
     for (const key in els) {
       const s = +key, el = els[s], p = g.board[s];
       el.classList.toggle('selected', s === sel);
@@ -134,7 +139,8 @@
     if (P && P.type === 'mate') goal = 'Checkmate in ' + P.n + (P.n === 1 ? ' move.' : ' moves.');
     else if (P && P.type === 'check') goal = 'Safe check in ' + P.limit + (P.limit === 1 ? ' move' : ' moves') + ' (piece must not be capturable)' + (userMoves ? ' · ' + movesLeft() + ' left' : '') + '.';
     else if (P && P.type === 'sac') goal = 'Find the winning sacrifice: give material to gain more.';
-    $('#pz-goal').textContent = state === 'gen' ? 'Setting up the board…' : goal;
+    const isAn = state === 'analysis', isWrong = state === 'wrong';
+    $('#pz-goal').textContent = state === 'gen' ? 'Setting up the board…' : isAn ? 'Move both sides freely. There are no right or wrong moves.' : isWrong ? 'Undo the move or retry the puzzle.' : goal;
     const s = stats.get();
     $('#pz-diff').textContent = DIFF[cfg.diff];
     $('#pz-streak').textContent = s.streak;
@@ -142,17 +148,32 @@
     $('#pz-count').innerHTML = 'Solved ' + s.solved + ' <i>·</i> Missed ' + s.missed + ' <i>·</i> Best ' + s.best;
     $('#pz-kind').textContent = TITLE[cfg.type];
     $('#pz-turn').classList.toggle('solved', state === 'solved');
-    $('#pz-turn-t').textContent = state === 'solved' ? (missed || revealed ? 'Puzzle over' : 'Puzzle solved') : 'White to Move';
+    $('#pz-turn-t').textContent = isAn ? 'Analysis' : isWrong ? 'Not quite' : state === 'solved' ? (missed || revealed ? 'Puzzle over' : 'Puzzle solved') : 'White to Move';
     const chk = cfg.type === 'check';
-    $('#pz-undo').classList.toggle('hidden', !chk);
-    $('#pz-undo').disabled = !snaps.length || busy || state === 'solved';
-    $('#pz-hint').disabled = busy || state === 'solved' || state === 'gen';
+    $('#pz-undo').classList.toggle('hidden', !(chk || isWrong) || isAn);
+    $('#pz-undo').disabled = isWrong ? false : (!snaps.length || busy || state === 'solved');
+    $('#pz-undo').classList.toggle('glow', isWrong);
+    $('#pz-retry').classList.toggle('glow', isWrong);
+    $('#pz-hint').disabled = busy || state === 'solved' || state === 'gen' || isWrong || isAn;
     $('#pz-retry').disabled = state === 'gen';
-    $('#pz-answer').disabled = busy || state === 'gen';
+    $('#pz-answer').disabled = busy || state === 'gen' || isAn;
+    const canAn = state === 'solved' || state === 'failed' || isWrong;
+    $('#pz-an-row').classList.toggle('hidden', !(canAn || isAn));
+    $('#pz-analysis').classList.toggle('hidden', !canAn);
+    $('#pz-exit').classList.toggle('hidden', !isAn);
+    $('#pz-nav').classList.toggle('hidden', !isAn);
+    $('#pz-fix').classList.toggle('hidden', !isWrong);
+    if (isAn && an) {
+      $('#pz-nb').disabled = an.idx <= 0;
+      $('#pz-nf').disabled = an.idx >= an.line.length;
+      $('#pz-nlabel').textContent = (an.idx ? an.sans[an.idx - 1] : 'Start') + ' · ' + an.idx + ' / ' + an.line.length;
+    }
     $('#pz-next').classList.toggle('glow', state === 'solved');
   }
 
   function prompt() {
+    if (state === 'wrong') return 'Not quite. Undo the move or retry.';
+    if (state === 'analysis') return 'Analysis: move either side, or use the arrows to step through the line.';
     if (state === 'failed') return 'Out of moves. Undo a move or retry.';
     if (P.type === 'mate') return P.n >= 2 && userMoves >= 1 ? (P.n - userMoves === 1 ? 'Now deliver checkmate' : 'Keep forcing: checkmate in ' + (P.n - userMoves) + ' more') : 'White to move: find the checkmate' + (P.n > 1 ? ' in ' + P.n : '');
     if (P.type === 'check') return 'Give a safe check in ' + movesLeft() + (movesLeft() === 1 ? ' move' : ' moves') + ' or fewer. Black will reply.';
@@ -185,69 +206,127 @@
       return favs.put(l);
     },
   };
-  /** Plain-English reasons for the solution, built from the position and the solution line. */
-  function explainText(p) {
-    try {
-      const g0 = PG.fromPos(p.pos);
-      const mv = (e) => findMove(g0, e);
-      if (p.type === 'best' || p.type === 'sac') {
-        const m = mv(p.good[0]);
-        const pc = NAMES[g0.board[m.from] & 7] || 'piece', cap = g0.board[m.to] ? NAMES[g0.board[m.to] & 7] : '';
-        const chk = /[+#]$/.test(p.san);
-        let t = (cap ? 'The ' + pc + ' takes the ' + cap + ' on ' + sqName(m.to) : 'The ' + pc + ' moves to ' + sqName(m.to)) + (chk ? ' with check' : '') + '. ';
-        t += p.explain + ' ';
-        if (p.type === 'sac') t += 'It gives up about ' + (p.loss != null ? Math.round(p.loss) : 'some') + ' point(s) at first, so a quick glance at safe moves can mislead you. Always check forcing moves: checks, captures and threats.';
-        else t += 'Habit to build: look at every check, capture and threat for both sides, and ask what each one achieves.';
-        return { title: 'Best move: ' + p.san, text: t };
-      }
-      if (p.type === 'mate' && PG.treeOf(p)) {
-        const line = [];
-        let nd = PG.treeOf(p);
+  const VAL = { 1: 1, 2: 3, 3: 3, 4: 5, 5: 9, 6: 100 };
+  const KDELTAS = [1, -1, 16, -16, 15, 17, -15, -17];
+  const lc = (p) => NAMES[p & 7] || 'piece';
+
+  /** Black to move after a quiet White move: could White now give checkmate? */
+  function threatensMate(g0) {
+    const t = g0.turn, ep = g0.ep;
+    let ok = false;
+    try { g0.turn = 8; g0.ep = -1; const mm = PG.mateMoves(g0, true); ok = !!(mm && mm.length); } catch (e) { /* ignore */ }
+    g0.turn = t; g0.ep = ep;
+    return ok;
+  }
+  /** g0 is the position after a mating move: say what kind of mate it is. */
+  function mateReason(g0, m) {
+    const k = g0.kingSquare(16), mover = g0.board[m.to] & 7;
+    let blocked = 0, total = 0;
+    for (const d of KDELTAS) { const q = k + d; if (q & 0x88) continue; total++; const x = g0.board[q]; if (x && (x & 24) === 16) blocked++; }
+    if (mover === 2 && blocked === total) return 'Smothered mate: the king is boxed in by its own pieces and nothing can take the knight.';
+    if ((k >> 4) % 7 === 0 && blocked > 0 && (mover === 4 || mover === 5) && (m.to >> 4) === (k >> 4)) return 'Back-rank mate: the king is stuck on the edge behind its own pieces.';
+    return 'Checkmate: the king has no safe square, and the check cannot be captured or blocked.';
+  }
+  /** Why a White move in the solution works (g0 is before the move). */
+  function whyWhite(g0, m) {
+    const pc = lc(g0.board[m.from]), cap = g0.board[m.to] ? lc(g0.board[m.to]) : '';
+    const act = cap ? 'The ' + pc + ' takes the ' + cap + ' on ' + sqName(m.to) : 'The ' + pc + ' goes to ' + sqName(m.to);
+    g0.makeMove(m);
+    let t;
+    const chk = g0.inCheck(g0.turn), rep = g0.legalMoves();
+    if (chk && !rep.length) t = act + '. ' + mateReason(g0, m);
+    else if (chk) {
+      const n = rep.length, safe = !rep.some((x) => x.to === m.to);
+      t = act + ' with check. ' + (n <= 3 ? 'Black has only ' + n + ' legal ' + (n === 1 ? 'reply' : 'replies') + ', so the game is forced.' : 'Black must answer it.') + (safe ? ' Nothing can take the ' + pc + '.' : '');
+    } else if (threatensMate(g0)) t = act + ' as a quiet move that threatens checkmate next.';
+    else t = act + '.';
+    g0.unmakeMove();
+    return t;
+  }
+  /** What a Black move does (g0 is before the move). */
+  function whyBlack(g0, r) {
+    const pc = lc(g0.board[r.from]), cap = g0.board[r.to] ? lc(g0.board[r.to]) : '';
+    if (g0.inCheck(g0.turn)) {
+      if ((g0.board[r.from] & 7) === 6) return 'The king steps out of check to ' + sqName(r.to) + (cap ? ', taking the ' + cap : '') + '.';
+      if (cap) return 'The ' + pc + ' takes the ' + cap + ' on ' + sqName(r.to) + ' to remove the check.';
+      return 'The ' + pc + ' blocks the check on ' + sqName(r.to) + '.';
+    }
+    return cap ? 'The ' + pc + ' takes the ' + cap + ' on ' + sqName(r.to) + '.' : 'The ' + pc + ' goes to ' + sqName(r.to) + '.';
+  }
+  /** Walk a list of plain moves from the start and describe each one. */
+  function narrate(pos, plains, blackLabel) {
+    const g0 = PG.fromPos(pos), out = [];
+    for (const e of plains) {
+      const col = g0.board[e.f] & 24;
+      if (col !== g0.turn) { g0.turn = col; g0.ep = -1; }
+      const m = findMove(g0, e);
+      if (!m) break;
+      const san = PG.sanOf(g0, m), white = col === 8;
+      out.push({ san, white, why: white ? whyWhite(g0, m) : blackLabel + whyBlack(g0, m) });
+      g0.makeMove(m);
+    }
+    return out;
+  }
+  /** The solution as a title, a lead sentence, one explained step per move and a note on Black's other defences. */
+  function explainParts(p) {
+    if (p.type === 'best' || p.type === 'sac') {
+      let lead = p.explain || '';
+      if (p.type === 'sac') lead += ' That is roughly ' + (p.loss != null ? Math.max(1, Math.round(p.loss / 100)) : 'some') + ' point(s) of material at first, so a quick look at safe moves can mislead you.';
+      return { title: (p.type === 'sac' ? 'Sacrifice: ' : 'Best move: ') + p.san, lead, steps: narrate(p.pos, [p.good[0]], ''), defence: 'Habit to build: look at every check, capture and threat for both sides, and ask what each one achieves.' };
+    }
+    if (p.type === 'mate') {
+      const plains = [];
+      let defence = '';
+      const tree = PG.treeOf(p);
+      if (tree) {
+        const g1 = PG.fromPos(p.pos);
+        let nd = tree;
         for (;;) {
-          const d = PG.dec(nd[0]), m = findMove(g0, d);
+          const d = PG.dec(nd[0]), m = findMove(g1, d);
           if (!m) break;
-          line.push(PG.sanOf(g0, m)); g0.makeMove(m);
+          plains.push(d); g1.makeMove(m);
           if (nd.length === 1) break;
-          const r = PG.toughest(nd[1]), rd = PG.dec(r[0]), rm = findMove(g0, rd);
+          const r = PG.toughest(nd[1]), rd = PG.dec(r[0]), rm = findMove(g1, rd);
           if (!rm) break;
-          line.push(PG.sanOf(g0, rm)); g0.makeMove(rm);
+          if (!defence) defence = 'After the first move Black has ' + nd[1].length + ' legal ' + (nd[1].length === 1 ? 'reply' : 'replies') + ' and every one of them loses by force. The line shown is the toughest.';
+          plains.push(rd); g1.makeMove(rm);
           nd = r[1];
         }
-        const tg = p.tags || [];
-        const idea = tg.includes('disc') ? ' The key idea is a discovered check: one piece steps aside and another gives check.' : tg.includes('sac') ? ' The key idea is a sacrifice that drags the defenders away.' : tg.includes('forced') ? ' The key idea is a check that leaves Black one or two legal replies, so the rest is forced.' : tg.includes('cap') ? ' It starts by taking material with tempo.' : '';
-        const t = p.n === 1
-          ? line[0] + ' gives check and Black has no answer: the king has no safe square, and the checking piece cannot be captured or blocked.'
-          : 'Play ' + line[0] + '. Black\'s toughest defence is ' + (line[1] || 'shown') + ', and the mate follows by force. Full line: ' + line.join(' ') + '.' + idea;
-        return { title: 'Mate in ' + p.n, text: t };
-      }
-      if (p.type === 'mate') {
-        const line = [];
-        const m1 = mv(p.sol[0]);
-        line.push(PG.sanOf(g0, m1));
+      } else {
+        const g1 = PG.fromPos(p.pos);
+        const m1 = findMove(g1, p.sol[0]);
+        plains.push(p.sol[0]); g1.makeMove(m1);
         let wm = 1;
-        g0.makeMove(m1);
         for (let k = 1; k < p.n; k++) {
-          const r = PG.bestDefence(g0, p.n - wm);
-          if (r) { line.push(PG.sanOf(g0, r)); g0.makeMove(r); }
-          const m = PG.findMateMove(g0, p.n - wm);
+          const r = PG.bestDefence(g1, p.n - wm);
+          if (r) { plains.push(plain(r)); g1.makeMove(r); }
+          const m = PG.findMateMove(g1, p.n - wm);
           if (!m) break;
-          line.push(PG.sanOf(g0, m)); wm++; g0.makeMove(m);
+          plains.push(plain(m)); wm++; g1.makeMove(m);
         }
-        const t = p.n === 1
-          ? line[0] + ' gives check and Black has no answer: the king has no safe square, and the checking piece cannot be captured or blocked.'
-          : 'Play ' + line[0] + '. Every reply leaves Black with only losing choices (the toughest defence is ' + (line[1] || 'shown') + '), and then ' + (line[line.length - 1]) + ' finishes it. Full line: ' + line.join(' ') + '.';
-        return { title: 'Mate in ' + p.n, text: t + (p.n > 1 ? ' Tip: forcing checks that take away the king\'s squares come first.' : ' Tip: count the king\'s escape squares, then look for the check that covers them all.') };
+        if (p.n > 1) defence = 'Black\'s other replies lose as well: this is a forced mate in ' + p.n + '.';
       }
-      const sans = PG.sanPath(p.pos, p.path);
-      return { title: 'Safe check in ' + p.path.length, text: 'One way: ' + sans.join(', then ') + '. A check is safe when Black cannot simply capture the piece that gives it. Count which of Black\'s pieces attack the square first.' };
-    } catch (e) { return { title: 'Solution', text: p.explain || 'Look for forcing moves first: checks, captures and threats.' }; }
+      const tg = p.tags || [];
+      const idea = tg.includes('disc') ? ' The key idea is a discovered check: one piece steps aside and another gives check.' : tg.includes('sac') ? ' The key idea is a sacrifice that drags the defenders away.' : tg.includes('forced') ? ' The key idea is a check that leaves Black one or two legal replies, so the rest is forced.' : tg.includes('cap') ? ' It starts by taking material with tempo.' : '';
+      return { title: 'Mate in ' + p.n, lead: p.n === 1 ? 'One move finishes it.' : 'A forced mate in ' + p.n + '.' + idea, steps: narrate(p.pos, plains, 'Black\'s toughest defence: '), defence };
+    }
+    const plains = [];
+    p.path.forEach((wm, i) => { plains.push(wm); if (p.replies && p.replies[i]) plains.push(p.replies[i]); });
+    return { title: 'Safe check in ' + p.path.length, lead: 'A check is safe when Black cannot capture the piece that gives it. Count which Black pieces attack the square first.', steps: narrate(p.pos, plains, 'Black replies: '), defence: '' };
+  }
+  function partsHtml(x) {
+    return '<b>' + esc(x.title) + '</b>' + (x.lead ? '<p class="pz-lead">' + esc(x.lead) + '</p>' : '')
+      + '<ol class="pz-steps">' + x.steps.map((st) => '<li class="' + (st.white ? 'w' : 'b') + '"><span class="pz-mv">' + esc(st.san) + '</span><span>' + esc(st.why) + '</span></li>').join('') + '</ol>'
+      + (x.defence ? '<p class="pz-def">' + esc(x.defence) + '</p>' : '');
+  }
+  function explainHtml(p) {
+    try { return partsHtml(explainParts(p)); } catch (e) { return '<b>Solution</b><p class="pz-lead">' + esc(p.explain || 'Look for forcing moves first: checks, captures and threats.') + '</p>'; }
   }
   function showWhy() {
     const box = $('#pz-why');
     if (!box) return;
-    if (!P || state !== 'solved') { box.classList.add('hidden'); return; }
-    const x = explainText(P);
-    box.innerHTML = '<b>' + esc(x.title) + '</b>' + esc(x.text);
+    if (!P || !(state === 'solved' || (state === 'analysis' && an && an.why))) { box.classList.add('hidden'); return; }
+    box.innerHTML = explainHtml(P);
     box.classList.remove('hidden');
   }
   function syncFav() {
@@ -267,7 +346,7 @@
       const f = favs.all().find((x) => x.id === c.dataset.id);
       if (!f) return;
       c.querySelector('.pf-play').onclick = () => LP.saves.guard(() => { LP.session.fresh(); cfg = { type: f.type, diff: f.diff }; missed = false; LP.closeSheet(); LP.showPage('puzzle'); load(f.P); });
-      c.querySelector('.pf-why').onclick = () => { const x = explainText(f.P); LP.openSheet('<h2>' + esc(x.title) + '</h2><p class="note" style="font-size:1rem">' + esc(x.text) + '</p><button class="btn wide" id="pw-b">Back</button>', true); $('#pw-b').onclick = favSheet; };
+      c.querySelector('.pf-why').onclick = () => { LP.openSheet('<div class="pz-why">' + explainHtml(f.P) + '</div><button class="btn wide" id="pw-b">Back</button>', true); $('#pw-b').onclick = favSheet; };
       c.querySelector('.pf-del').onclick = () => { favs.put(favs.all().filter((x) => x.id !== f.id)); favSheet(); };
     });
   }
@@ -282,7 +361,7 @@
     P = p;
     g = PG.fromPos(p.pos);
     log = []; snaps = []; userMoves = 0; sel = -1; targets = []; last = null; hints = [];
-    state = 'play'; busy = false; revealed = false;
+    state = 'play'; busy = false; revealed = false; bad = null; an = null; clearBubble();
     tw = p.type === 'mate' ? PG.treeOf(p) : null; trp = null;
     showWhy(); syncFav();
     buildBoard();
@@ -320,7 +399,7 @@
     missed = false;
     const my = ++token;
     P = null; g = PG.blank(); log = []; snaps = []; userMoves = 0; sel = -1; targets = []; last = null; hints = [];
-    state = 'gen'; busy = true;
+    state = 'gen'; busy = true; bad = null; an = null; clearBubble();
     showWhy(); syncFav();
     LP.showPage('puzzle');
     buildBoard();
@@ -338,9 +417,10 @@
 
   /* ------------------------------------------------------------------- moves */
   function onSquare(s) {
-    if (busy || state !== 'play' || !g) return;
+    const isAn = state === 'analysis';
+    if (busy || (state !== 'play' && !isAn) || !g) return;
     const p = g.board[s];
-    const own = p && (p & 24) === 8;
+    const own = p && (p & 24) === (isAn ? g.turn : 8);
     if (sel >= 0) {
       const ms = targets.filter((m) => m.to === s);
       if (ms.length) { choose(ms); return; }
@@ -360,12 +440,13 @@
     LP.openSheet(`<h2>Promote to</h2>
       <div class="rush-pieces">${[5, 4, 3, 2].map((t) => `<button class="btn big" data-pr="${t}"><span class="rp-g"><i class="ic-sp" style="--i:${({ 5: 2, 4: 5, 3: 1, 2: 4 })[t]}"></i></span>${PIECE_NAME[t]}</button>`).join('')}</div>`, true);
     document.querySelectorAll('[data-pr]').forEach((b) => {
-      b.onclick = () => { LP.closeSheet(); const m = ms.find((x) => x.promo === +b.dataset.pr); if (m && state === 'play' && !busy) commit(m); };
+      b.onclick = () => { LP.closeSheet(); const m = ms.find((x) => x.promo === +b.dataset.pr); if (m && (state === 'play' || state === 'analysis') && !busy) commit(m); };
     });
   }
 
   function commit(m) {
     sel = -1; targets = []; hints = [];
+    if (state === 'analysis') { anMove(m); return; }
     if (P.type === 'check') snaps.push(g.board.slice());
     g.makeMove(m);
     last = [m.from, m.to];
@@ -376,34 +457,98 @@
     else afterBest(m);
   }
 
-  /** Take back the move that was just made (not part of the solution) after a short pause. */
-  function wrong(msg) {
-    stats.miss();
-    busy = true;
-    const my = token;
-    setStatus(msg, 'check');
-    updateInfo();
-    setTimeout(() => {
-      if (my !== token) return;
+  /* ------------------------------------------------- bad moves: bubble, red arrow, Undo */
+  function drawArrow(a) {
+    const svg = $('#pz-arrow');
+    if (!svg) return;
+    if (!a) { svg.innerHTML = ''; return; }
+    const c = (q) => [(q & 7) + 0.5, 7 - (q >> 4) + 0.5];
+    const [x1, y1] = c(a[0]), [x2, y2] = c(a[1]);
+    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+    const sx = x1 + ux * 0.3, sy = y1 + uy * 0.3, ex = x2 - ux * 0.1, ey = y2 - uy * 0.1;
+    const bx = ex - ux * 0.42, by = ey - uy * 0.42;
+    svg.innerHTML = `<line x1="${sx}" y1="${sy}" x2="${bx}" y2="${by}" stroke="#e5484d" stroke-width="0.17" stroke-linecap="round" opacity=".9"/>`
+      + `<polygon points="${ex},${ey} ${bx - uy * 0.27},${by + ux * 0.27} ${bx + uy * 0.27},${by - ux * 0.27}" fill="#e5484d" opacity=".9"/>`;
+  }
+  function showBubble(text, arrow) {
+    const b = $('#pz-bubble');
+    if (b) { $('#pz-bubble-t').textContent = text; b.classList.remove('hidden'); }
+    drawArrow(arrow);
+  }
+  function clearBubble() {
+    const b = $('#pz-bubble');
+    if (b) b.classList.add('hidden');
+    drawArrow(null);
+  }
+
+  /** The bad move m is on the board and Black is to move: why does it fail, and which Black move should the arrow show? */
+  function refute(m, kind, left) {
+    const pn = lc(g.board[m.to]);
+    const caps = g.legalMoves().filter((x) => x.to === m.to).sort((a, b) => VAL[g.board[a.from] & 7] - VAL[g.board[b.from] & 7]);
+    const inChk = g.inCheck(0x10);
+    if (caps.length) {
+      const c = caps[0], cn = lc(g.board[c.from]);
+      g.makeMove(c);
+      const back = g.legalMoves().some((x) => x.to === m.to);
       g.unmakeMove();
-      last = log.length ? [log[log.length - 1].f, log[log.length - 1].t] : null;
-      busy = false;
-      render();
-      updateInfo();
-      setStatus(prompt(), 'dim');
-    }, 950);
+      const base = 'Your ' + pn + ' can be taken by the ' + cn + ' on ' + sqName(c.from) + '.';
+      let tail;
+      if (kind === 'check') tail = ' A safe check cannot be captured.';
+      else if (kind === 'mate') tail = inChk ? ' It is check, but the check can be captured, so it is not mate.' : ' That does not lead to mate.';
+      else tail = back ? ' You could take back, but this is not the strongest move.' : ' You cannot take back, so you just lose the piece.';
+      return { text: base + tail, arrow: [c.from, m.to] };
+    }
+    if (kind === 'mate') {
+      if (inChk) {
+        const em = g.legalMoves(), e = em.find((x) => (g.board[x.from] & 7) === 6) || em[0];
+        if (e) {
+          const isK = (g.board[e.from] & 7) === 6;
+          return { text: isK ? 'It is check, but the king escapes to ' + sqName(e.to) + '. Checkmate needs every escape covered.' : 'It is check, but Black can block with the ' + lc(g.board[e.from]) + ' on ' + sqName(e.to) + '. Checkmate needs a check nothing can stop.', arrow: [e.from, e.to] };
+        }
+      }
+      if (left <= 0) return { text: inChk ? 'That is not checkmate.' : 'That is not even check, so it cannot be mate. Look for the mating move.', arrow: null };
+      if (left > 3) return { text: 'Not the line. Look for a forcing check or capture first.', arrow: null };
+      const r = PG.bestDefence(g, left);
+      if (r) return { text: 'That does not force mate in time: Black can answer with ' + g.moveToSan(r) + '.', arrow: [r.from, r.to] };
+      return { text: 'That does not force checkmate in time.', arrow: null };
+    }
+    if (kind === 'check') return { text: 'That checks, but it is not a safe check. Find a check that nothing can take.', arrow: null };
+    if (kind === 'sac') return { text: 'Not the sacrifice. Look for a move that gives up material to win more back (or to force mate).', arrow: null };
+    return { text: 'That is not the strongest move. Look at checks, captures and threats first.', arrow: null };
+  }
+  function badMove(m, kind, left) { const r = refute(m, kind, left); wrong(r.text, r.arrow, m); }
+
+  /** Keep the bad move on the board with the reason; Undo or Retry gets you out. */
+  function wrong(text, arrow, mv) {
+    stats.miss();
+    state = 'wrong'; busy = false; sel = -1; targets = []; hints = [];
+    bad = mv ? plain(mv) : null;
+    showBubble(text, arrow);
+    render();
+    updateInfo();
+    setStatus('Not quite. Press Undo to take the move back.', 'check');
+  }
+  function undoWrong() {
+    g.unmakeMove();
+    if (P.type === 'check') snaps.pop();      // commit() saved a snapshot before the bad move
+    last = log.length ? [log[log.length - 1].f, log[log.length - 1].t] : null;
+    state = 'play'; bad = null; sel = -1; targets = []; hints = [];
+    clearBubble();
+    render();
+    updateInfo();
+    setStatus(prompt(), 'dim');
   }
 
   function afterMate(m) {
     const remaining = P.n - userMoves;                  // moves White has left, counting the one just made
     if (PG.isMate(g)) { log.push(plain(m)); userMoves++; solve(); return; }
-    if (remaining <= 1) { wrong(P.n === 1 ? 'That is not checkmate' : 'That is not checkmate. Look for the mating move'); return; }
+    if (remaining <= 1) { badMove(m, 'mate', 0); return; }
     // not mate yet: it has to leave Black no defence, i.e. checkmate is still forced within the moves left
     const wasTw = tw;
     let ok = treeWhite(m);
     if (!ok && userMoves === 0 && (P.sol || []).some((x) => x.f === m.from && x.t === m.to)) ok = true;
     if (!ok && remaining - 1 <= 3) ok = PG.forcedWithin(g, remaining - 1).ok;     // too deep for the quick solver beyond that
-    if (!ok) { tw = wasTw; wrong(PG.treeOf(P) && remaining - 1 > 3 ? 'Not the line. Look for a forcing check or capture' : 'That does not force checkmate in time'); return; }
+    if (!ok) { tw = wasTw; badMove(m, 'mate', remaining - 1); return; }
     log.push(plain(m));
     userMoves++;
     busy = true;
@@ -438,7 +583,7 @@
         return;
       }
       // Unsafe check — Black can take the piece (move still on board until wrong() undoes it)
-      wrong('That checks, but your piece can be taken. Find a safe check.');
+      badMove(m, 'check', 0);
       return;
     }
     log.push(plain(m));
@@ -480,7 +625,7 @@
   function afterBest(m) {
     const ok = P.good.some((x) => x.f === m.from && x.t === m.to);
     if (ok) { log.push(plain(m)); userMoves++; solve(); }
-    else wrong(P.type === 'sac' ? 'Not the sacrifice. Look for a move that gives material to gain more.' : 'Not the best move. Try again');
+    else badMove(m, P.type === 'sac' ? 'sac' : 'best', 0);
   }
 
   function solve() {
@@ -502,7 +647,7 @@
     updateInfo();
     let msg;
     if (P.type === 'best' || P.type === 'sac') msg = 'Correct! ' + P.san + '. ' + P.explain;
-    else if (P.type === 'mate') msg = 'Checkmate! Puzzle solved.';
+    else if (P.type === 'mate') msg = 'Checkmate! Mate in ' + P.n + ' solved. The explanation is above.';
     else msg = 'Check! Solved in ' + userMoves + (userMoves === 1 ? ' move.' : ' moves.');
     setStatus(msg, 'good');
     showWhy();
@@ -568,7 +713,7 @@
         updateInfo();
         let msg = 'Solution played.';
         if (P.type === 'best' || P.type === 'sac') msg = (P.type === 'sac' ? 'Sacrifice' : 'Best move') + ': ' + P.san + '. ' + P.explain;
-        else if (P.type === 'mate') msg = P.n === 1 ? 'Checkmate solution.' : 'Forced mate in ' + P.n + ' (one way of defending shown).';
+        else if (P.type === 'mate') msg = P.n === 1 ? 'Checkmate solution. The explanation is above.' : 'Forced mate in ' + P.n + ' (one way of defending shown). The explanation is above.';
         else msg = 'Safe check solution.';
         setStatus(msg, 'good');
         showWhy();
@@ -631,6 +776,7 @@
   }
 
   function undo() {
+    if (state === 'wrong') { undoWrong(); return; }
     if (busy || !snaps.length || P.type !== 'check' || state === 'solved') return;
     // Restore board from snapshot (before White's last move); drop White move and any Black reply from the log
     g.board.set(snaps.pop());
@@ -644,6 +790,63 @@
     updateInfo();
     setStatus(prompt(), 'dim');
     save();
+  }
+
+  /* ------------------------------------------------------------------ analysis */
+  /** Rebuild the board at move i of the analysis line (it is the whole timeline: moving back and playing a new move cuts the old future). */
+  function anRebuild(i) {
+    g = PG.fromPos(P.pos);
+    an.sans = [];
+    let k = 0;
+    for (; k < i && k < an.line.length; k++) {
+      const e = an.line[k], col = g.board[e.f] & 24;
+      if (col !== g.turn) { g.turn = col; g.ep = -1; }
+      const m = findMove(g, e);
+      if (!m) break;
+      an.sans.push(PG.sanOf(g, m));
+      g.makeMove(m);
+    }
+    if (k < i && k < an.line.length) an.line.length = k;     // a saved move that cannot be played is dropped
+    an.idx = k;
+    last = k ? [an.line[k - 1].f, an.line[k - 1].t] : null;
+  }
+  function anGo(i, slideMove) {
+    anRebuild(i);
+    sel = -1; targets = [];
+    render();
+    if (slideMove) slide(slideMove.from, slideMove.to);
+    updateInfo();
+    let msg = prompt();
+    if (!g.hasLegalMove()) msg = g.inCheck(g.turn) ? 'Checkmate. ' + (g.turn === 8 ? 'Black' : 'White') + ' wins this line.' : 'Stalemate: a draw.';
+    else if (g.inCheck(g.turn)) msg = (g.turn === 8 ? 'White' : 'Black') + ' is in check.';
+    setStatus(msg, 'dim');
+  }
+  function anMove(m) {
+    const e = plain(m), cur = an.line[an.idx];
+    if (cur && cur.f === e.f && cur.t === e.t && (cur.p || 0) === e.p) an.idx++;       // same as the saved next move: keep the rest
+    else { an.line.length = an.idx; an.line.push(e); an.idx++; }                      // a new idea: the old future is dropped
+    anGo(an.idx, m);
+  }
+  function enterAnalysis() {
+    if (!P || !(state === 'solved' || state === 'failed' || state === 'wrong')) return;
+    const line = log.map((e) => ({ f: e.f, t: e.t, p: e.p || 0 }));
+    if (state === 'wrong' && bad) line.push(bad);
+    token++;
+    an = { line, sans: [], idx: line.length, why: state === 'solved' };
+    state = 'analysis'; busy = false; bad = null; hints = [];
+    clearBubble();
+    showWhy();
+    anGo(line.length);
+  }
+  function exitAnalysis() {
+    if (state !== 'analysis' || !P) return;
+    load(P);                 // back to the original starting position, ready to try again
+  }
+  function anStep(d) {
+    if (state !== 'analysis' || !an) return;
+    const i = an.idx + d;
+    if (i < 0 || i > an.line.length) return;
+    if (d > 0) { const e = an.line[an.idx]; anGo(i, e ? { from: e.f, to: e.t } : null); } else anGo(i);
   }
 
   /* ------------------------------------------------------------------- setup */
@@ -722,6 +925,17 @@
   $('#pz-hint').addEventListener('click', hint);
   $('#pz-answer').addEventListener('click', solution);
   $('#pz-undo').addEventListener('click', undo);
+  $('#pz-fundo').addEventListener('click', undo);
+  $('#pz-fretry').addEventListener('click', () => { if (P) load(P); });
+  $('#pz-analysis').addEventListener('click', enterAnalysis);
+  $('#pz-exit').addEventListener('click', exitAnalysis);
+  $('#pz-nb').addEventListener('click', () => anStep(-1));
+  $('#pz-nf').addEventListener('click', () => anStep(1));
+  document.addEventListener('keydown', (e) => {
+    if (state !== 'analysis' || !$('#puzzle').classList.contains('active') || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (!$('#sheet-bg').classList.contains('hidden')) return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); anStep(-1); } else if (e.key === 'ArrowRight') { e.preventDefault(); anStep(1); }
+  });
   $('#pz-retry').addEventListener('click', () => { if (P) load(P); });
   $('#pz-next').addEventListener('click', () => {
     if (state === 'play' && log.length && !revealed) {
@@ -748,7 +962,7 @@
       load(d.P, d.log);
     },
     peek() { return { P, state, userMoves }; },
-    dragHooks: { tap: (s) => onSquare(s), selected: () => sel, can: (s) => !busy && state === 'play' && !!g && !!g.board[s] && (g.board[s] & 24) === 8 },
+    dragHooks: { tap: (s) => onSquare(s), selected: () => sel, can: (s) => !busy && !!g && !!g.board[s] && (state === 'play' ? (g.board[s] & 24) === 8 : state === 'analysis' && (g.board[s] & 24) === g.turn) },
     describe(d) { return TITLE[d.cfg.type] + ' · ' + DIFF[d.cfg.diff] + (d.P && d.P.type === 'mate' ? ' · Mate in ' + d.P.n : ''); },
   };
   LP.renderSavedList();   // the menu's Continue button needs Rush and Puzzle to exist

@@ -1694,3 +1694,32 @@ body[data-bgk="img"]::before { content: ''; position: fixed; inset: 0; z-index: 
 
 /* Online */
 .on-code { font: 700 2.4rem/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .25em; text-align: center; padding: 1rem .5rem; margin: .4rem 0 .8rem; background: var(--panel-2, #2a2a2a); border-radius: 12px; user-select: all; }
+
+
+/* ---- puzzles: bad-move bubble, red arrow, analysis bar, explanation list */
+#puzzle .board-col { position: relative; }
+.pz-arrow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 12; }
+.pz-bubble { position: relative; background: #fff; color: #161512; border-radius: 12px; padding: .6rem .85rem; margin: 0 0 .6rem; font-size: .98rem; line-height: 1.35; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+.pz-bubble b { display: block; color: #c62a2f; margin-bottom: .1rem; }
+.pz-bubble::after { content: ""; position: absolute; top: 100%; left: 2rem; border: 9px solid transparent; border-top-color: #fff; }
+.pz-bubble.hidden { display: none; }
+@media (min-width: 900px), (orientation: landscape) and (min-width: 600px) {
+  .pz-bubble { position: absolute; z-index: 20; left: calc(100% + 16px); top: 0; margin: 0; width: min(260px, calc((100vw - var(--bs)) / 2 - 28px)); }
+  .pz-bubble::after { top: 1.2rem; left: auto; right: 100%; border-top-color: transparent; border-right-color: #fff; }
+}
+.pz-act.glow { box-shadow: 0 0 0 3px rgba(229,72,77,.55); }
+.pz-nav { display: flex; align-items: center; gap: .6rem; margin: .5rem 0 0; }
+.pz-nav.hidden, .pz-actions.hidden { display: none; }
+.pz-nav .pz-act { flex: 0 0 4.4rem; padding: .55rem .3rem; font-size: 1.1rem; }
+.pz-nav span { flex: 1; text-align: center; color: var(--muted); font-weight: 600; font-size: .95rem; }
+.pz-lead { margin: .2rem 0 0; }
+.pz-steps { list-style: none; margin: .5rem 0 0; padding: 0; }
+.pz-steps li { display: flex; gap: .7rem; padding: .4rem 0; border-top: 1px solid rgba(255,255,255,.08); }
+.pz-steps li:first-child { border-top: 0; }
+.pz-mv { flex: none; min-width: 3.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pz-steps li.w .pz-mv { color: #8fe388; }
+.pz-steps li.b .pz-mv { color: #ff9a9d; }
+.pz-def { margin: .5rem 0 0; color: var(--muted); }
+.pz-fix { display: flex; gap: .6rem; margin: .5rem 0 0; }
+.pz-fix.hidden { display: none; }
+.pz-fix .pz-act { padding: .7rem .3rem; font-size: 1.05rem; }
