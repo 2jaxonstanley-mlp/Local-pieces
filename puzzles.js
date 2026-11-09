@@ -32,6 +32,7 @@
   let revealed = false;    // the solution was shown, so it does not count as solved
   let token = 0;
   let toastTimer = null;
+  let rush = null;         // Puzzle Rush / Puzzle Battle hooks (puzzlerush.js): { onSolved, onFail, afterFail, hideType }
   let tw = null, trp = null;   // mate puzzles from the bank: the proof-tree node White is on, or the replies awaiting Black
 
   let missed = false;      // a hint, the solution or a wrong move was used on this puzzle
@@ -172,6 +173,7 @@
   }
 
   function prompt() {
+    if (rush && rush.hideType && state === 'play') return 'White to move';
     if (state === 'wrong') return 'Not quite. Undo the move or retry.';
     if (state === 'analysis') return 'Analysis: move either side, or use the arrows to step through the line.';
     if (state === 'failed') return 'Out of moves. Undo a move or retry.';
@@ -183,6 +185,7 @@
 
   /* ------------------------------------------------------------- persistence */
   function save() {
+    if (rush) return;     // a Rush run is never saved to Continue
     if (!P || (state !== 'play' && state !== 'failed')) return;
     LP.session.set({ kind: 'puzzle', cfg, P, log, date: Date.now() });
   }
@@ -458,20 +461,20 @@
   }
 
   /* ------------------------------------------------- bad moves: bubble, red arrow, Undo */
-  function drawArrow(a) {
+  function drawArrow(a, colour) {
     const svg = $('#pz-arrow');
     if (!svg) return;
     if (!a || !a.length) { svg.innerHTML = ''; return; }
     const list = Array.isArray(a[0]) ? a : [a];
-    const op = list.length > 4 ? 0.7 : 0.9;
+    const op = list.length > 4 ? 0.7 : 0.9, col = colour || '#e5484d';
     const c = (q) => [(q & 7) + 0.5, 7 - (q >> 4) + 0.5];
     svg.innerHTML = list.map((ar) => {
       const [x1, y1] = c(ar[0]), [x2, y2] = c(ar[1]);
       const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
       const sx = x1 + ux * 0.3, sy = y1 + uy * 0.3, ex = x2 - ux * 0.1, ey = y2 - uy * 0.1;
       const bx = ex - ux * 0.42, by = ey - uy * 0.42;
-      return `<line x1="${sx}" y1="${sy}" x2="${bx}" y2="${by}" stroke="#e5484d" stroke-width="0.17" stroke-linecap="round" opacity="${op}"/>`
-        + `<polygon points="${ex},${ey} ${bx - uy * 0.27},${by + ux * 0.27} ${bx + uy * 0.27},${by - ux * 0.27}" fill="#e5484d" opacity="${op}"/>`;
+      return `<line x1="${sx}" y1="${sy}" x2="${bx}" y2="${by}" stroke="${col}" stroke-width="0.17" stroke-linecap="round" opacity="${op}"/>`
+        + `<polygon points="${ex},${ey} ${bx - uy * 0.27},${by + ux * 0.27} ${bx + uy * 0.27},${by - ux * 0.27}" fill="${col}" opacity="${op}"/>`;
     }).join('');
   }
   function showBubble(text, arrow) {
@@ -538,7 +541,7 @@
     if (kind === 'sac') return { text: 'Not the sacrifice. Look for a move that gives up material to win more back (or to force mate).', arrow: null };
     return { text: 'That is not the strongest move. Look at checks, captures and threats first.', arrow: null };
   }
-  function badMove(m, kind, left) { const r = refute(m, kind, left); wrong(r.text, r.arrow, m); }
+  function badMove(m, kind, left) { if (rush) { rushFail(m); return; } const r = refute(m, kind, left); wrong(r.text, r.arrow, m); }
 
   /** Keep the bad move on the board with the reason; Undo or Retry gets you out. */
   function wrong(text, arrow, mv) {
@@ -611,6 +614,7 @@
     log.push(plain(m));
     userMoves++;
     if (userMoves >= P.limit) {
+      if (rush) { rushFail(null); return; }
       state = 'failed';
       render();
       updateInfo();
@@ -651,6 +655,7 @@
   }
 
   function solve() {
+    if (rush) { state = 'solved'; busy = true; render(); setStatus('Correct!', 'good'); rush.onSolved(); return; }
     state = 'solved';
     busy = false;
     render();
@@ -814,6 +819,33 @@
     save();
   }
 
+  /* ------------------------------------------------------- Puzzle Rush / Battle hooks */
+  /** The correct move from the current position, if it can be worked out. */
+  function answerMove() {
+    if (!P || !g) return null;
+    try {
+      if (P.type === 'mate') {
+        if (tw) { const m = findMove(g, PG.dec(tw[0])); if (m) return m; }
+        const first = userMoves === 0 ? (P.sol || []).map((e) => findMove(g, e)).find(Boolean) : null;
+        return first || PG.findMateMove(g, Math.max(1, P.n - userMoves));
+      }
+      if (P.type === 'check') return (P.path && P.path[userMoves] && findMove(g, P.path[userMoves])) || null;
+      return (P.good || []).map((e) => findMove(g, e)).find(Boolean) || null;
+    } catch (e) { return null; }
+  }
+  /** A wrong answer in a Rush: take the move back, show the right one for a moment, then hand over to the Rush. */
+  function rushFail(m) {
+    const my = token;
+    if (m) g.unmakeMove();
+    state = 'rushfail'; busy = true; sel = -1; targets = []; hints = [];
+    const am = m ? answerMove() : null;
+    rush.onFail();
+    if (am) { hints = [am.from, am.to]; render(); drawArrow([am.from, am.to], '#3fbf6f'); } else render();
+    setStatus(am ? 'The right move was ' + PG.sanOf(g, am) + '.' : m ? 'Not that one.' : 'Out of moves.', 'check');
+    setTimeout(() => { if (rush && my === token) { drawArrow(null); rush.afterFail(); } }, 1700);
+  }
+  function rushScreen(on) { const el = $('#puzzle'); if (el) el.classList.toggle('rush', !!on); }
+
   /* ------------------------------------------------------------------ analysis */
   /** Rebuild the board at move i of the analysis line (it is the whole timeline: moving back and playing a new move cuts the old future). */
   function anRebuild(i) {
@@ -943,7 +975,7 @@
   }
 
   $('#pz-board').addEventListener('click', (e) => { const el = e.target.closest('.square'); if (el) onSquare(+el.dataset.sq); });
-  $('#pz-back').addEventListener('click', leave);
+  $('#pz-back').addEventListener('click', () => { if (rush) { if (rush.back) rush.back(); return; } leave(); });
   $('#pz-hint').addEventListener('click', hint);
   $('#pz-answer').addEventListener('click', solution);
   $('#pz-undo').addEventListener('click', undo);
@@ -984,6 +1016,27 @@
       load(d.P, d.log);
     },
     peek() { return { P, state, userMoves }; },
+    /** Puzzle Rush / Battle: puzzlerush.js drives the puzzle screen through these. */
+    rushStart(hooks, title) {
+      rush = hooks; token++;
+      LP.closeSheet(); clearBubble(); rushScreen(true);
+      $('#pz-title').textContent = title;
+      LP.showPage('puzzle');
+      this.rushWait('Setting up a puzzle…');
+    },
+    rushWait(msg) {
+      token++; P = null; g = PG.blank(); log = []; snaps = []; userMoves = 0; sel = -1; targets = []; last = null; hints = [];
+      state = 'gen'; busy = true; bad = null; an = null; drawArrow(null);
+      buildBoard(); render();
+      setStatus(msg || 'Setting up a puzzle…', 'dim');
+    },
+    rushLoad(p) {
+      cfg = { type: p.type, diff: p.diff || 'normal', n: p.n || 0 };
+      missed = false;
+      load(p);
+    },
+    rushStop() { rush = null; token++; rushScreen(false); $('#pz-title').textContent = 'Puzzle'; drawArrow(null); },
+    rushIdle() { busy = true; token++; },
     dragHooks: { tap: (s) => onSquare(s), selected: () => sel, can: (s) => !busy && !!g && !!g.board[s] && (state === 'play' ? (g.board[s] & 24) === 8 : state === 'analysis' && (g.board[s] & 24) === g.turn) },
     describe(d) { return TITLE[d.cfg.type] + ' · ' + DIFF[d.cfg.diff] + (d.P && d.P.type === 'mate' ? ' · Mate in ' + d.P.n : ''); },
   };

@@ -12,6 +12,16 @@
 
   /* ------------------------------------------------------------------ update log */
   const LOG = [
+    { id: 'u12', date: '2026-11-09', title: 'Puzzle Rush, Puzzle Battle and the global leaderboard', items: [
+      'New Puzzle Rush in Train: random puzzles that get harder the more you solve. 1 point for each one, three lives, and a wrong move costs a life (it shows you the answer, then moves on)',
+      'You are asked at the start if you want to see the puzzle type (mate, check, best move, sacrifice) or not',
+      'The lives show as three boxes above the board, and a cross fills a box each time you get one wrong',
+      'When a run ends you get a results screen: your score, Today / This week / All time rank, longest streak, highest solved puzzle rating, average time per puzzle and global rank',
+      'New Global section at the top of the menu. Online Chess moved there, and Online Puzzle Battle is new: make a code, share it, and both of you race the same puzzles in the same order for 3 minutes',
+      'In a battle you see your opponent\'s score and lives the whole time. It ends when time runs out, or when one player has no lives left and the other has a higher score',
+      'New Global Leaderboard in the Global section (not in Stats): Puzzle Rush score (Today, This week, All time), hardest puzzle solved, Capture Rush score, brilliant moves, best moves and time played, with profile pictures. Each board has a clear title and says what the number is',
+      'The tour now covers the Global section and Puzzle Rush',
+    ] },
     { id: 'u11', date: '2026-11-06', title: 'Checkmate puzzles, Pause and mod menu upgrades', items: [
       'New Online mode in Classic: play a friend on another device. Make a private game and share the code, or post a public one for anyone. Timed (1 min, 3 min + 1, 5 min, 10 min) or unlimited, with resign, draw offers and rematch',
       'Bullet and Rapid now have a Pause button: the clock stops, the computer stops thinking and nobody can move until you tap Resume',

@@ -268,8 +268,13 @@
     $('#st-body').innerHTML = bodyFn ? bodyFn() : overview();
     document.querySelectorAll('[data-cm]').forEach((b) => { b.onclick = () => { chessMode = b.dataset.cm; render(); }; });
   }
-  function open() { render(); LP.showPage('board'); }
-  $('.mode[data-mode="board"]').addEventListener('click', open);
+  function open(t) { if (typeof t === 'string' && TAB_IDS.has(t)) tab = t; render(); LP.showPage('board'); }
+  $('.mode[data-mode="board"]').addEventListener('click', () => open());
 
-  LP.stats = { event, puzzle, open, render };
+  /** Totals for the global leaderboard, and a way for Puzzle Rush to add its play time. */
+  function snapshot() {
+    return { cap: S.rush.reduce((m, r) => Math.max(m, r.score || 0), 0) || (typeof rushBestOld === 'function' ? rushBestOld() : 0), brill: S.q.brilliant || 0, best: S.q.best || 0, secs: Math.round(S.secs || 0) };
+  }
+  function addTime(secs) { touch(); S.secs += Math.max(0, secs || 0); save(); }
+  LP.stats = { event, puzzle, open, render, snapshot, addTime };
 })();

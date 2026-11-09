@@ -10,7 +10,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
   <link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
-  <link rel="stylesheet" href="styles.css?v=52">
+  <link rel="stylesheet" href="styles.css?v=56">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- Carlito is the open Calibri look-alike, used when Calibri isn't installed -->
@@ -55,6 +55,35 @@
           <span class="mode-go" aria-hidden="true">&rsaquo;</span>
         </button>
 
+        <section class="mgrp closed" data-g="global">
+          <button class="mgrp-h" type="button" aria-expanded="false"><span class="mgrp-t">Global</span><span class="mgrp-s">Online games and world rankings</span><i class="mgrp-chev" aria-hidden="true"></i></button>
+          <div class="mgrp-b"><div class="modes">
+          <button class="mode" data-mode="online" style="--accent:#7bd88f">
+            <span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Online Chess</span>
+              <span class="mode-desc">Play chess against a friend on another device, timed or unlimited.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="pbattle" style="--accent:#f2c45a">
+            <span class="mode-ic" aria-hidden="true"><i class="ic-sp" style="--i:0"></i></span>
+            <span class="mode-text">
+              <span class="mode-name">Online Puzzle Battle</span>
+              <span class="mode-desc">Race a friend online on the same puzzles for 3 minutes.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="global" style="--accent:#e8c14a">
+            <span class="mode-ic" aria-hidden="true"><i class="ic-star"></i></span>
+            <span class="mode-text">
+              <span class="mode-name">Global Leaderboard</span>
+              <span class="mode-desc">Rankings of all players: Puzzle Rush, Capture Rush and more.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          </div></div>
+        </section>
         <section class="mgrp closed" data-g="classic">
           <button class="mgrp-h" type="button" aria-expanded="false"><span class="mgrp-t">Classic</span><span class="mgrp-s">Untimed and timed chess</span><i class="mgrp-chev" aria-hidden="true"></i></button>
           <div class="mgrp-b"><div class="modes">
@@ -79,14 +108,6 @@
             <span class="mode-text">
               <span class="mode-name">Rapid</span>
               <span class="mode-desc">5 or 10 minutes each, plus 2 seconds every move.</span>
-            </span>
-            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
-          </button>
-          <button class="mode" data-mode="online" style="--accent:#7bd88f">
-            <span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/></svg></span>
-            <span class="mode-text">
-              <span class="mode-name">Online</span>
-              <span class="mode-desc">Play a friend on another device, timed or unlimited.</span>
             </span>
             <span class="mode-go" aria-hidden="true">&rsaquo;</span>
           </button>
@@ -177,6 +198,14 @@
             <span class="mode-text">
               <span class="mode-name">Puzzles</span>
               <span class="mode-desc">Sharpen your tactics with a fresh challenge every time.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="puzzlerush" style="--accent:#ff8a3d">
+            <span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Puzzle Rush</span>
+              <span class="mode-desc">Solve as many as you can with three lives. They get harder.</span>
             </span>
             <span class="mode-go" aria-hidden="true">&rsaquo;</span>
           </button>
@@ -491,11 +520,13 @@
       </header>
       <div class="layout">
         <div class="board-col">
+          <div id="pr-bar" class="pr-bar"></div>
           <div id="pz-bubble" class="pz-bubble hidden" role="status"><b>Not quite</b><span id="pz-bubble-t"></span></div>
           <div class="board-wrap">
             <div id="pz-board" class="board"></div>
             <svg id="pz-arrow" class="pz-arrow" viewBox="0 0 8 8" aria-hidden="true"></svg>
             <div id="pz-toast" class="toast" role="status"></div>
+            <div id="pr-over" class="pr-over hidden"></div>
           </div>
           <div id="pz-status" class="status">&nbsp;</div>
           <div id="pz-fix" class="pz-fix hidden"><button id="pz-fundo" class="pz-act glow">Undo</button><button id="pz-fretry" class="pz-act">Retry</button></div>
@@ -636,21 +667,21 @@
   <script src="guessq.js?v=1"></script>
   <script src="ai.js?v=41"></script>
   <script src="guessbot.js?v=4"></script>
-  <script src="app.js?v=45"></script>
+  <script src="app.js?v=46"></script>
   <script src="export.js?v=2"></script>
   <script src="prefs.js?v=1"></script>
   <script src="history.js?v=8"></script>
   <script src="saves.js?v=6"></script>
-  <script src="leaderboard.js?v=31"></script>
+  <script src="leaderboard.js?v=33"></script>
   <script src="profile.js?v=26"></script>
   <script src="hats.js?v=2"></script>
   <script src="shop.js?v=38"></script>
-    <script src="stats.js?v=35"></script>
+    <script src="stats.js?v=36"></script>
   <script src="rush.js?v=25"></script>
   <script src="puzzlegen.js?v=33"></script>
   <script src="puzzlebank.js?v=3"></script>
   <script src="ratings.js?v=32"></script>
-  <script src="puzzles.js?v=35"></script>
+  <script src="puzzles.js?v=36"></script>
   <script src="popular.js?v=3"></script>
   <script src="drag.js?v=1"></script>
   <script src="solocore.js?v=1"></script>
@@ -661,10 +692,12 @@
   <script src="editor.js?v=3"></script>
   <script src="mods.js?v=5"></script>
   <script src="online-config.js?v=1"></script>
-  <script src="online.js?v=1"></script>
+  <script src="online.js?v=2"></script>
+  <script src="globalboard.js?v=2"></script>
+  <script src="puzzlerush.js?v=2"></script>
   <script src="hockey.js?v=10"></script>
-  <script src="tutorial.js?v=5"></script>
-  <script src="extras.js?v=15"></script>
+  <script src="tutorial.js?v=7"></script>
+  <script src="extras.js?v=17"></script>
   <script src="menu.js?v=3"></script>
 </body>
 </html>

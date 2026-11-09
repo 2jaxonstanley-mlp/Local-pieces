@@ -205,6 +205,7 @@
 
   /* -------------------------------------------------------------- the game */
   function begin(id, tok, s) {
+    if (net && net.id === id) return;   // this game is already running: never start it a second time
     stopAll();
     net = { id, tok, me: s.you, n: 0, timer: 0, drawShown: false, offered: false, rematchShown: false, over: false, busy: false, overPolls: 0 };
     LP.chessOnline.start({ id, me: s.you, names: s.names, base: s.mode === 'timed' ? s.base : 0, inc: s.inc });
@@ -323,6 +324,9 @@
     rematch,
     leave() { if (net) { clearTimeout(net.timer); net = null; } },
   };
+
+  /** The network helpers are shared with Puzzle Battle and the global leaderboard. */
+  LP.onlineApi = { get, post, rawGet, rawPost, rnd, url, sleep };
 
   const card = document.querySelector('.mode[data-mode="online"]');
   if (card) card.addEventListener('click', mainSheet);
