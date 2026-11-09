@@ -70,8 +70,8 @@
     if (r.barKey === key) return;
     r.barKey = key;
     const me = `<div class="pr-side"><div class="pr-who">${av(LP.profile && LP.profile.pfp && LP.profile.pfp(), myName())}<b class="pr-score">${r.score}</b></div>${lives(r.lives)}</div>`;
-    if (r.mode === 'solo') { el.innerHTML = me + `<div class="pr-mid"><small>Best</small><b>${best().score}</b></div>`; return; }
-    el.innerHTML = me + `<div class="pr-mid"><small>Time</small><b id="pr-time">${mmss(r.len)}</b></div>` +
+    if (r.mode === 'solo') { el.innerHTML = me + `<div class="pr-mid"><small>Best:</small><b>${best().score}</b></div>`; return; }
+    el.innerHTML = me + `<div class="pr-mid"><small>Time:</small><b id="pr-time">${mmss(r.len)}</b></div>` +
       `<div class="pr-side opp">${lives(r.opp.l)}<div class="pr-who">${av('', r.oppName)}<b class="pr-score">${r.opp.s}</b></div></div>`;
   }
   function over(html) { const o = $('#pr-over'); if (!o) return; o.innerHTML = html || ''; o.classList.toggle('hidden', !html); }
@@ -116,7 +116,7 @@
       if (!r || r.over || r.timeUp) return;
       if (r.lives > 0) { serve(r); return; }
       if (r.mode === 'solo') finishSolo(r);
-      else { r.out = true; over('<small>Out of lives</small><b>Waiting for the result</b>'); Puz.rushIdle(); }
+      else { r.out = true; over('<small>Out of lives:</small><b>Waiting for the result</b>'); Puz.rushIdle(); }
     },
     back() {
       const r = run;
@@ -186,12 +186,12 @@
     LP.openSheet(`<div class="re">
         ${record ? '<div class="re-new">New Record!</div>' : ''}
         ${pfpHtml()}<div class="re-score">${r.score}</div>
-        <div class="re-ranks"><div><b id="re-t">…</b><span>Today</span></div><div><b id="re-w">…</b><span>This week</span></div><div><b id="re-a">…</b><span>All time</span></div></div>
-        <div class="re-sum"><h3>Summary</h3>
-          <div><span>Longest Streak</span><b>${r.longest}</b></div>
-          <div><span>Highest Solved</span><b>${r.hs || '–'}</b></div>
-          <div><span>Avg Time per Puzzle</span><b>${avg}</b></div>
-          <div><span>Global Rank</span><b id="re-g">…</b></div>
+        <div class="re-ranks"><div><span>Today:</span><b id="re-t">…</b></div><div><span>This week:</span><b id="re-w">…</b></div><div><span>All time:</span><b id="re-a">…</b></div></div>
+        <div class="re-sum"><h3>Summary:</h3>
+          <div><span>Longest Streak:</span><b>${r.longest}</b></div>
+          <div><span>Highest Solved:</span><b>${r.hs || '–'}</b></div>
+          <div><span>Avg Time per Puzzle:</span><b>${avg}</b></div>
+          <div><span>Global Rank:</span><b id="re-g">…</b></div>
         </div>
         <button class="btn big primary" id="re-again">Play Again</button>
         <div class="row"><button class="btn" id="re-lb">Global Leaderboard</button><button class="btn" id="re-menu">Menu</button></div>
@@ -212,7 +212,7 @@
   /** Start prompt for a single run. */
   function soloSheet() {
     LP.openSheet(`<h2>Puzzle Rush<span class="sub">Solve as many puzzles as you can. You have ${LIVES} lives.</span></h2>
-      <p class="note pr-rules">Puzzles are random and get harder as you go. 1 point for each puzzle you solve. A wrong move costs a life and shows the answer. Your best: ${best().score}.</p>
+      <p class="note pr-rules">Puzzles are random and get harder as you go. 1 point for each puzzle you solve. A wrong move costs a life and shows the answer. Your best score: ${best().score}.</p>
       ${typeOpt()}
       <div class="row"><button class="btn" id="pr-x">Cancel</button><button class="btn primary" id="pr-go">Start</button></div>
       <button class="btn wide pr-lbb" id="pr-lbb">Global Leaderboard</button>`, true);
@@ -244,7 +244,7 @@
       $('#pb-x').onclick = LP.closeSheet;
       return;
     }
-    LP.openSheet(`<h2>Puzzle Battle<span class="sub">Race a friend on the same puzzles for 3 minutes. Highest score wins.</span></h2>
+    LP.openSheet(`<h2>Puzzle Battle<span class="sub">Race a friend on the same puzzles for 3 minutes. The highest score wins.</span></h2>
       ${typeOpt()}
       <div class="stack">
         <button class="btn big primary" id="pb-new">Create a battle</button>
@@ -364,7 +364,7 @@
     if (run !== r) return;
     const now = srv(r), left = r.start - now, rem = r.start + r.len - now;
     if (!r.started) {
-      if (left > 0) { over(`<small>Get ready</small><b>${Math.ceil(left / 1000)}</b>`); return; }
+      if (left > 0) { over(`<small>Get ready:</small><b>${Math.ceil(left / 1000)}</b>`); return; }
       r.started = true; r.t0 = Date.now(); over('');
       serve(r);
     }
@@ -377,7 +377,7 @@
   async function timeUp(r) {
     r.timeUp = true;
     Puz.rushIdle();
-    over('<small>Time</small><b>Time is up!</b>');
+    over('<small>Time:</small><b>Time is up!</b>');
     for (let i = 0; i < 8 && run === r && !r.over; i++) {
       await sleep(i ? 1200 : 1500);
       if (run !== r || r.over) return;
@@ -457,7 +457,7 @@
     const why = { lives: win === 'w' ? 'Your opponent ran out of lives.' : win === 'l' ? 'You ran out of lives.' : 'Both players ran out of lives.', time: 'Time ran out.', forfeit: win === 'w' ? 'Your opponent left the battle.' : 'You left the battle.', abandon: win === 'w' ? 'Your opponent disconnected.' : 'You were disconnected.' }[s.reason] || '';
     LP.openSheet(`<div class="re">
         <div class="re-new ${win}">${win === 'w' ? 'You won!' : win === 'l' ? 'You lost' : 'Draw'}</div>
-        <div class="pb-vs"><div><small>${esc(myName())}</small><b>${mine.s}</b>${lives(Math.max(0, mine.l))}</div><div><small>${esc(r.oppName)}</small><b>${theirs.s}</b>${lives(Math.max(0, theirs.l))}</div></div>
+        <div class="pb-vs"><div><small>${esc(myName())}:</small><b>${mine.s}</b><em>Lives:</em>${lives(Math.max(0, mine.l))}</div><div><small>${esc(r.oppName)}:</small><b>${theirs.s}</b><em>Lives:</em>${lives(Math.max(0, theirs.l))}</div></div>
         <p class="note">${esc(why)}</p>
         <button class="btn big primary" id="pb-re">Rematch</button>
         <button class="btn wide" id="pb-menu">Menu</button></div>`, false);

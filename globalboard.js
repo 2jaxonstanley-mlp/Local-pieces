@@ -91,8 +91,8 @@
     const timed = board === 'rush' || board === 'hs';
     const B = BOARDS.find((b) => b[0] === board);
     const per = timed ? PERIODS.find((p) => p[0] === period)[1] : 'All time';
-    body.innerHTML = `<h2 class="gl-title">${esc(B[2])}<small>${esc(per)}</small></h2><p class="lb-hint gl-info">${esc(B[3])}</p>` +
-      (timed ? `<div class="lb-chips seg">${PERIODS.map((p) => `<button class="lb-chip${p[0] === period ? ' on' : ''}" data-p="${p[0]}">${p[1]}</button>`).join('')}</div>` : '') +
+    body.innerHTML = `<h2 class="gl-title">${esc(B[2])}<small>Showing: ${esc(per)}</small></h2><p class="lb-hint gl-info">What it measures: ${esc(B[3].charAt(0).toLowerCase() + B[3].slice(1))}</p>` +
+      (timed ? `<p class="lb-hint gl-per">Time period:</p><div class="lb-chips seg">${PERIODS.map((p) => `<button class="lb-chip${p[0] === period ? ' on' : ''}" data-p="${p[0]}">${p[1]}</button>`).join('')}</div>` : '') +
       '<div id="gl-list"><p class="lb-hint">Loading…</p></div>';
     body.querySelectorAll('[data-p]').forEach((b) => { b.onclick = () => { period = b.dataset.p; render(chips, body); }; });
     syncStats().then(() => N().get({ a: 'lbget', board, period: timed ? period : 'all', pid })).then((r) => {
@@ -105,8 +105,8 @@
           <span class="lb-rank">${e.rank}</span>${av(e.pfp, e.name)}
           <span class="lb-who"><b>${esc(e.name)}${e.you ? ' (you)' : ''}</b></span>
           <span class="lb-val"><b>${esc(fmtV(board, e.value))}</b><span>${esc(B[4])}</span></span></li>`).join('');
-      const mine = r.me && r.me.rank > r.top.length ? `<p class="lb-hint">Your rank: #${r.me.rank} of ${r.total} (${esc(fmtV(board, r.me.value))})</p>` : (!r.me ? '<p class="lb-hint">You are not on this board yet.</p>' : '');
-      box.innerHTML = '<ol class="lb-list">' + rows + '</ol>' + mine + `<p class="lb-hint">${r.total} player${r.total === 1 ? '' : 's'}</p>`;
+      const mine = r.me && r.me.rank > r.top.length ? `<p class="lb-hint">Your rank: #${r.me.rank} of ${r.total}. Your score: ${esc(fmtV(board, r.me.value))}</p>` : (!r.me ? '<p class="lb-hint">Your rank: not on this board yet.</p>' : '');
+      box.innerHTML = '<ol class="lb-list">' + rows + '</ol>' + mine + `<p class="lb-hint">Players on this board: ${r.total}</p>`;
     });
   }
 
