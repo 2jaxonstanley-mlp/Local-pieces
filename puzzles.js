@@ -173,7 +173,7 @@
   }
 
   function prompt() {
-    if (rush && rush.hideType && state === 'play') return 'White to move';
+    if (rush && state === 'play') return 'White to move';   // in a Rush the type is shown under Difficulty, if it is turned on
     if (state === 'wrong') return 'Not quite. Undo the move or retry.';
     if (state === 'analysis') return 'Analysis: move either side, or use the arrows to step through the line.';
     if (state === 'failed') return 'Out of moves. Undo a move or retry.';
@@ -844,7 +844,7 @@
     setStatus(am ? 'The right move was ' + PG.sanOf(g, am) + '.' : m ? 'Not that one.' : 'Out of moves.', 'check');
     setTimeout(() => { if (rush && my === token) { drawArrow(null); rush.afterFail(); } }, 1700);
   }
-  function rushScreen(on) { const el = $('#puzzle'); if (el) el.classList.toggle('rush', !!on); }
+  function rushScreen(on) { const el = $('#puzzle'); if (el) el.classList.toggle('rush', !!on); document.body.classList.toggle('rush-on', !!on); }
 
   /* ------------------------------------------------------------------ analysis */
   /** Rebuild the board at move i of the analysis line (it is the whole timeline: moving back and playing a new move cuts the old future). */

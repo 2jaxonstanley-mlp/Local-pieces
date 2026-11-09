@@ -44,10 +44,10 @@
     });
   }
 
-  async function submitRush(score, hs) {
+  async function submitRush(score, hs, mode) {
     if (!enabled()) return null;
     const pfp = await thumb(LP.profile && LP.profile.pfp && LP.profile.pfp());
-    const r = await N().post({ a: 'lbsubmit', pid, name: nameNow(), pfp, score, hs }, 3);
+    const r = await N().post({ a: 'lbsubmit', pid, name: nameNow(), pfp, score, hs, m: mode || 's' }, 3);
     return r && r.ranks ? r : null;
   }
 
@@ -65,7 +65,9 @@
   /* ------------------------------------------------------------------ page */
   // [id, chip label, title shown over the list, what the number is, unit under each number]
   const BOARDS = [
-    ['rush', 'Puzzle Rush score', 'Puzzle Rush: best score', 'The most puzzles solved in one Puzzle Rush run.', 'points'],
+    ['rush3', 'Rush 3 min', 'Puzzle Rush 3 min: best score', 'The most puzzles solved in one 3 minute Puzzle Rush.', 'points'],
+    ['rush5', 'Rush 5 min', 'Puzzle Rush 5 min: best score', 'The most puzzles solved in one 5 minute Puzzle Rush.', 'points'],
+    ['rush', 'Rush Survival', 'Puzzle Rush Survival: best score', 'The most puzzles solved in one Survival run (no timer).', 'points'],
     ['hs', 'Hardest puzzle', 'Puzzle Rush: hardest puzzle solved', 'The rating of the hardest puzzle solved in a Puzzle Rush run.', 'rating'],
     ['cap', 'Capture Rush score', 'Capture Rush: best score', 'The highest score in a single Capture Rush game.', 'points'],
     ['brill', 'Brilliant moves', 'Most brilliant moves found', 'Brilliant moves found in your Analyze reviews.', 'brilliant'],
@@ -73,7 +75,7 @@
     ['secs', 'Time played', 'Most time played', 'Total time spent playing on this device.', 'played'],
   ];
   const PERIODS = [['today', 'Today'], ['week', 'This week'], ['all', 'All time']];
-  let board = 'rush', period = 'all', token = 0;
+  let board = 'rush3', period = 'all', token = 0;
   const fmtT = (s) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return h ? h + 'h ' + m + 'm' : Math.max(1, m) + 'm'; };
   const fmtV = (b, v) => (b === 'secs' ? fmtT(v) : String(v));
   const av = (src, name) => (src ? `<span class="gl-av" style="background-image:url(${src})"></span>` : `<span class="gl-av">${esc((name || '?')[0].toUpperCase())}</span>`);
@@ -88,7 +90,7 @@
     }
     chips.innerHTML = BOARDS.map((b) => `<button class="lb-chip${b[0] === board ? ' on' : ''}" data-b="${b[0]}">${b[1]}</button>`).join('');
     chips.querySelectorAll('.lb-chip').forEach((b) => { b.onclick = () => { board = b.dataset.b; render(chips, body); }; });
-    const timed = board === 'rush' || board === 'hs';
+    const timed = ['rush', 'rush3', 'rush5', 'hs'].includes(board);
     const B = BOARDS.find((b) => b[0] === board);
     const per = timed ? PERIODS.find((p) => p[0] === period)[1] : 'All time';
     body.innerHTML = `<h2 class="gl-title">${esc(B[2])}<small>Showing: ${esc(per)}</small></h2><p class="lb-hint gl-info">What it measures: ${esc(B[3].charAt(0).toLowerCase() + B[3].slice(1))}</p>` +

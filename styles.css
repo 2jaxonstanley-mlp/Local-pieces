@@ -1728,22 +1728,14 @@ body[data-bgk="img"]::before { content: ''; position: fixed; inset: 0; z-index: 
 .pr-bar { display: none; width: var(--bs); max-width: 100%; margin: 0 auto .5rem; align-items: center; justify-content: space-between; gap: .6rem; }
 #puzzle.rush .pr-bar { display: flex; }
 #puzzle.rush .pz-panel, #puzzle.rush #pz-an-row, #puzzle.rush .pz-bubble { display: none !important; }
-.pr-side { display: flex; align-items: center; gap: .55rem; min-width: 0; }
-.pr-side.opp { flex-direction: row; justify-content: flex-end; }
-.pr-who { display: flex; flex-direction: column; align-items: center; gap: .1rem; }
 .pr-av, .re-av, .gl-av { display: grid; place-items: center; border-radius: 50%; background: #81b64c center/cover no-repeat; color: #14210a; font-weight: 700; overflow: hidden; flex: none; }
 .pr-av { width: 2.4rem; height: 2.4rem; font-size: 1.2rem; }
-.pr-side.opp .pr-av { background-color: #b48cf2; color: #1d1030; }
 .pr-score { font-size: 1.5rem; line-height: 1; }
 .pr-lives { display: flex; gap: .25rem; }
 .pr-box { position: relative; width: 1.35rem; height: 1.35rem; border-radius: 4px; background: var(--panel-2); border: 2px solid #5a5a5a; }
 .pr-box.x { background: #7a2a2a; border-color: #ca3431; }
 .pr-box.x::before, .pr-box.x::after { content: ''; position: absolute; left: 50%; top: 50%; width: 80%; height: 3px; background: #ff9a9d; border-radius: 2px; transform: translate(-50%, -50%) rotate(45deg); }
 .pr-box.x::after { transform: translate(-50%, -50%) rotate(-45deg); }
-.pr-mid { display: flex; flex-direction: column; align-items: center; color: var(--muted); }
-.pr-mid small { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; }
-.pr-mid b { font-size: 1.5rem; color: #fff; font-variant-numeric: tabular-nums; }
-.pr-mid b.low { color: #ff7b7b; }
 .pr-over { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(20,20,20,.78); border-radius: 4px; text-align: center; pointer-events: none; }
 .pr-over small { color: var(--muted); font-size: 1.1rem; text-transform: uppercase; letter-spacing: .08em; }
 .pr-over b { font-size: 3.4rem; line-height: 1.1; }
@@ -1792,8 +1784,54 @@ body[data-bgk="img"]::before { content: ''; position: fixed; inset: 0; z-index: 
 .re-sum div span { margin-right: .8rem; }
 .re-sum h3 { text-transform: none; letter-spacing: 0; }
 .pb-vs em { font-style: normal; color: var(--muted); font-size: .85rem; }
-.pr-mid small { text-transform: none; letter-spacing: 0; font-size: .85rem; }
 .pr-over small { text-transform: none; letter-spacing: 0; }
 #gl-page .gl-per { margin: .8rem 0 0; text-align: left; }
 #gl-page .gl-info { text-align: left; margin: .3rem 0 0; }
 #gl-page .gl-per + .lb-chips.seg { margin-top: .3rem; }
+
+/* ---- Puzzle Rush has its own look: green table, a light banner on top, score and clock above the board, lives and difficulty below */
+body.rush-on { background: #4a7a3a; }
+#puzzle.rush { background: #4a7a3a; min-height: 100vh; }
+#puzzle.rush .game-header { background: #f3f3f0; height: 56px; }
+#puzzle.rush .game-header .text-btn { color: #333; font-weight: 700; }
+#puzzle.rush .pz-badge { display: none; }
+#puzzle.rush #pz-title { display: flex; align-items: center; gap: .7rem; color: #1d1d1b; font-size: 1.35rem; font-weight: 800; white-space: nowrap; }
+.pr-turn { display: inline-block; width: 1.7rem; height: 1.7rem; border-radius: 5px; background: #fff; border: 2px solid #8a8a86; box-sizing: border-box; flex: none; }
+.pr-turn.b { background: #222; border-color: #000; }
+#puzzle.rush #pz-status { display: none; }
+#puzzle.rush .pr-bar { margin: 1.4rem auto 1rem; }
+.pr-who { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; min-width: 0; }
+.pr-who.opp { flex-direction: row-reverse; justify-content: flex-start; text-align: right; }
+.pr-who.opp .pr-av { background-color: #b48cf2; color: #1d1030; }
+.pr-av { width: 2.8rem; height: 2.8rem; border-radius: 6px; font-size: 1.3rem; }
+.pr-score { font-size: 2rem; line-height: 1; color: #fff; }
+.pr-name { flex-basis: 100%; font-size: .85rem; color: rgba(255,255,255,.8); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 9rem; }
+.pr-who.opp .pr-name { margin-left: auto; }
+.pr-mode { color: #fff; text-align: center; }
+.pr-mode #pr-time { font-size: 2.2rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+.pr-mode #pr-time.low { color: #ffb3b3; }
+.pr-surv { display: flex; align-items: center; gap: .5rem; font-size: 1.5rem; font-weight: 700; color: rgba(255,255,255,.85); }
+.pr-surv i::before { content: '\1F9E9\FE0E'; font-style: normal; }
+.pr-foot { display: none; width: var(--bs); max-width: 100%; margin: 1.1rem auto 0; align-items: flex-start; justify-content: space-between; gap: .6rem; }
+#puzzle.rush .pr-foot { display: flex; }
+.pr-lives { gap: .5rem; }
+.pr-box { width: 2rem; height: 1.8rem; border-radius: 6px; background: rgba(0,0,0,.3); border: 0; }
+.pr-box.x { background: #9b2c2c; }
+.pr-box.x::before, .pr-box.x::after { background: #ffd2d2; }
+.pr-diff { text-align: right; color: rgba(255,255,255,.78); min-width: 0; }
+.pr-foot > .pr-diff:not(:last-child) { text-align: center; }
+.pr-diff small { display: block; font-size: 1.05rem; }
+.pr-diff b { display: block; font-size: 1.7rem; line-height: 1.1; color: #fff; }
+.pr-diff span { display: block; font-size: .95rem; margin-top: .15rem; }
+.pr-over { background: rgba(30,50,25,.82); }
+/* the Puzzle Rush start sheet */
+.pr-lbl { margin: .8rem 0 .3rem; color: var(--muted); text-align: left; }
+.pr-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+.pr-m { border: 2px solid transparent; border-radius: 10px; background: var(--panel-2); color: #fff; font: inherit; padding: .8rem .3rem; cursor: pointer; display: grid; gap: .15rem; }
+.pr-m b { font-size: 1.15rem; } .pr-m small { color: var(--muted); font-size: .8rem; }
+.pr-m.on { border-color: #ff8a3d; background: rgba(255,138,61,.16); }
+.re-mode { color: var(--muted); font-weight: 700; }
+.sheet .pr-opt { display: flex; flex-direction: row; align-items: center; text-align: left; }
+.sheet .pr-opt input { width: 1.4rem; height: 1.4rem; flex: none; margin: 0; }
+.sheet .pr-opt > span { flex: 1; min-width: 0; }
+.sheet .pr-rules { text-align: left; }

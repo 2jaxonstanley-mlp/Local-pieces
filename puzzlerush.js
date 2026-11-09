@@ -14,14 +14,19 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const N = () => LP.onlineApi;
   const LIVES = 3;
-  const TYPEKEY = 'localPieces.rushType', BESTKEY = 'localPieces.rushBest';
+  const TYPEKEY = 'localPieces.rushType', BESTKEY = 'localPieces.rushBest', MODEKEY = 'localPieces.rushMode';
+  const MODES = { 3: '3 min', 5: '5 min', s: 'Survival' };      // Puzzle Rush modes: two timed, one with no timer
+  const BOARD_OF = { 3: 'rush3', 5: 'rush5', s: 'rush' };      // Global Leaderboard board for each mode
   const MATEIN = { easy: [1, 2], normal: [1, 2, 3], hard: [2, 3, 4, 5], insane: [2, 3, 4, 5, 6, 7, 8] };
   const TYPES = ['mate', 'mate', 'check', 'best', 'sac'];
 
   const readJ = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } };
   const writeJ = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* ignore */ } };
   const showType = () => readJ(TYPEKEY, true) !== false;
-  const best = () => Object.assign({ score: 0, hs: 0, streak: 0 }, readJ(BESTKEY, {}));
+  const readMode = () => { const m = String(readJ(MODEKEY, '3')); return MODES[m] ? m : '3'; };
+  /** Personal bests, one set per mode. (An older save held one set for everything: that was Survival.) */
+  const bests = () => { const a = readJ(BESTKEY, {}) || {}; return a.score != null ? { s: { score: a.score, hs: a.hs, streak: a.streak } } : a; };
+  const best = (m) => Object.assign({ score: 0, hs: 0, streak: 0 }, bests()[m] || {});
 
   /* ------------------------------------------------------------ puzzles */
   /** What the k-th puzzle of a run should be: harder the further you get. */
@@ -54,6 +59,7 @@
     Puz.rushStop();
     const o = $('#pr-over'); if (o) o.classList.add('hidden');
     const b = $('#pr-bar'); if (b) b.innerHTML = '';
+    const f = $('#pr-foot'); if (f) f.innerHTML = '';
   }
 
   /* ------------------------------------------------------------ the bar above the board */
@@ -62,17 +68,24 @@
   const mmss = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
   const myName = () => (LP.profile && LP.profile.name && LP.profile.name()) || 'You';
 
+  const typeLabel = (p) => (!p ? '' : p.type === 'mate' ? 'Mate in ' + (p.n || 1) : p.type === 'check' ? 'Checks only' : p.type === 'best' ? 'Best move' : 'Sacrifice');
   function bar() {
-    const el = $('#pr-bar'), r = run;
-    if (!el) return;
-    if (!r) { el.innerHTML = ''; return; }
-    const key = [r.mode, r.score, r.lives, r.opp && r.opp.s, r.opp && r.opp.l, r.oppName].join('|');
+    const top = $('#pr-bar'), foot = $('#pr-foot'), r = run;
+    if (!top || !foot) return;
+    if (!r) { top.innerHTML = ''; foot.innerHTML = ''; return; }
+    const key = [r.mode, r.score, r.lives, r.opp && r.opp.s, r.opp && r.opp.l, r.oppName, r.cur && r.cur.rt, r.waiting, r.hideType].join('|');
     if (r.barKey === key) return;
     r.barKey = key;
-    const me = `<div class="pr-side"><div class="pr-who">${av(LP.profile && LP.profile.pfp && LP.profile.pfp(), myName())}<b class="pr-score">${r.score}</b></div>${lives(r.lives)}</div>`;
-    if (r.mode === 'solo') { el.innerHTML = me + `<div class="pr-mid"><small>Best:</small><b>${best().score}</b></div>`; return; }
-    el.innerHTML = me + `<div class="pr-mid"><small>Time:</small><b id="pr-time">${mmss(r.len)}</b></div>` +
-      `<div class="pr-side opp">${lives(r.opp.l)}<div class="pr-who">${av('', r.oppName)}<b class="pr-score">${r.opp.s}</b></div></div>`;
+    const me = `<div class="pr-who">${av(LP.profile && LP.profile.pfp && LP.profile.pfp(), myName())}<b class="pr-score">${r.score}</b></div>`;
+    const diff = `<div class="pr-diff"><small>Difficulty:</small><b>${r.cur && !r.waiting ? r.cur.rt : '–'}</b>${r.hideType || !r.cur || r.waiting ? '' : `<span>${esc(typeLabel(r.cur))}</span>`}</div>`;
+    if (r.mode === 'solo') {
+      top.innerHTML = me + (r.timed ? `<div class="pr-mode"><b id="pr-time">${mmss(r.left)}</b></div>` : '<div class="pr-mode"><span class="pr-surv"><i></i>Survival</span></div>');
+      foot.innerHTML = lives(r.lives) + diff;
+      return;
+    }
+    top.innerHTML = me.replace('</div>', `<small class="pr-name">${esc(myName())}</small></div>`) + `<div class="pr-mode"><b id="pr-time">${mmss(r.len)}</b></div>` +
+      `<div class="pr-who opp">${av('', r.oppName)}<b class="pr-score">${r.opp.s}</b><small class="pr-name">${esc(r.oppName)}</small></div>`;
+    foot.innerHTML = lives(r.lives) + diff + lives(r.opp.l);
   }
   function over(html) { const o = $('#pr-over'); if (!o) return; o.innerHTML = html || ''; o.classList.toggle('hidden', !html); }
 
@@ -88,6 +101,7 @@
     const p = nextPuzzle(r);
     if (!p) { r.waiting = true; Puz.rushWait('Setting up a puzzle…'); return; }
     r.waiting = false; r.cur = p; r.curT = Date.now();
+    if (!r.started) { r.started = true; r.lastTick = Date.now(); }
     Puz.rushLoad(clone(p));
     bar();
   }
@@ -158,13 +172,33 @@
     return Object.assign({ mode, score: 0, lives: LIVES, streak: 0, longest: 0, hs: 0, times: [], cur: null, curT: 0, over: false, waiting: false, gen: false, made: 0, hideType: !showType(), t0: Date.now(), barKey: '' }, extra);
   }
 
-  function beginSolo() {
+  function beginSolo(mode) {
+    mode = MODES[mode] ? String(mode) : readMode();
     stopRun();
-    const r = run = newRun('solo', { q: [] });
+    const ms = mode === '3' ? 180000 : mode === '5' ? 300000 : 0;
+    const r = run = newRun('solo', { q: [], rmode: mode, timed: !!ms, left: ms, started: false, lastTick: 0, timeUp: false });
     Puz.rushStart(hooks, 'Puzzle Rush');
+    syncTitle();
     bar(); over('');
+    r.ticker = setInterval(() => tickSolo(r), 200);
     soloFill(r);
     serve(r);
+  }
+
+  /** The clock of a timed run only counts down while a puzzle is on the board. */
+  function tickSolo(r) {
+    if (run !== r || r.over) return;
+    const now = Date.now();
+    if (r.timed && r.started && !r.waiting && !r.timeUp) r.left -= now - r.lastTick;
+    r.lastTick = now;
+    const t = $('#pr-time');
+    if (t) { t.textContent = mmss(r.left); t.classList.toggle('low', r.left < 30000); }
+    if (r.timed && r.started && r.left <= 0 && !r.timeUp) {
+      r.timeUp = true;
+      Puz.rushIdle();
+      over('<small>Time:</small><b>Time is up!</b>');
+      setTimeout(() => finishSolo(r), 1300);
+    }
   }
 
   const rank = (n) => (n ? '#' + n : '–');
@@ -180,10 +214,12 @@
     clearInterval(r.ticker);
     const secs = (Date.now() - r.t0) / 1000;
     if (LP.stats && LP.stats.addTime) LP.stats.addTime(secs);
-    const b = best(), record = r.score > 0 && r.score > b.score;
-    writeJ(BESTKEY, { score: Math.max(b.score, r.score), hs: Math.max(b.hs, r.hs), streak: Math.max(b.streak, r.longest) });
+    const b = best(r.rmode), record = r.score > 0 && r.score > b.score;
+    const all = bests(); all[r.rmode] = { score: Math.max(b.score, r.score), hs: Math.max(b.hs, r.hs), streak: Math.max(b.streak, r.longest) };
+    writeJ(BESTKEY, all);
     const avg = r.times.length ? (r.times.reduce((a, x) => a + x, 0) / r.times.length).toFixed(1) + 's' : '–';
     LP.openSheet(`<div class="re">
+        <div class="re-mode">Puzzle Rush: ${MODES[r.rmode]}</div>
         ${record ? '<div class="re-new">New Record!</div>' : ''}
         ${pfpHtml()}<div class="re-score">${r.score}</div>
         <div class="re-ranks"><div><span>Today:</span><b id="re-t">…</b></div><div><span>This week:</span><b id="re-w">…</b></div><div><span>All time:</span><b id="re-a">…</b></div></div>
@@ -196,30 +232,39 @@
         <button class="btn big primary" id="re-again">Play Again</button>
         <div class="row"><button class="btn" id="re-lb">Global Leaderboard</button><button class="btn" id="re-menu">Menu</button></div>
       </div>`, false);
-    $('#re-again').onclick = beginSolo;
+    $('#re-again').onclick = () => beginSolo(r.rmode);
     $('#re-menu').onclick = () => { stopRun(); LP.closeSheet(); LP.showPage('menu'); };
-    $('#re-lb').onclick = () => { stopRun(); LP.closeSheet(); if (LP.global) LP.global.show('rush'); else LP.showPage('menu'); };
+    $('#re-lb').onclick = () => { stopRun(); LP.closeSheet(); if (LP.global) LP.global.show(BOARD_OF[r.rmode]); else LP.showPage('menu'); };
     const fill = (res) => {
       if (!$('#re-t')) return;
       const k = res && res.ranks;
       $('#re-t').textContent = k ? rank(k.today) : '–'; $('#re-w').textContent = k ? rank(k.week) : '–';
       $('#re-a').textContent = k ? rank(k.all) : '–'; $('#re-g').textContent = k ? rank(k.all) : '–';
     };
-    if (r.score > 0 && LP.global) LP.global.submitRush(r.score, r.hs).then(fill, () => fill(null)); else fill(null);
+    if (r.score > 0 && LP.global) LP.global.submitRush(r.score, r.hs, r.rmode).then(fill, () => fill(null)); else fill(null);
     if (LP.global) LP.global.syncStats();
   }
 
-  /** Start prompt for a single run. */
+  /** Start prompt for a single run: pick Survival or a timed mode, and whether to show the puzzle type. */
   function soloSheet() {
+    let mode = readMode();
     LP.openSheet(`<h2>Puzzle Rush<span class="sub">Solve as many puzzles as you can. You have ${LIVES} lives.</span></h2>
-      <p class="note pr-rules">Puzzles are random and get harder as you go. 1 point for each puzzle you solve. A wrong move costs a life and shows the answer. Your best score: ${best().score}.</p>
+      <p class="pr-lbl">Mode:</p>
+      <div class="pr-modes">${Object.keys(MODES).map((m) => `<button class="pr-m${m === mode ? ' on' : ''}" data-m="${m}"><b>${MODES[m]}</b><small>${m === 's' ? 'No timer' : 'Beat the clock'}</small></button>`).join('')}</div>
+      <p class="note pr-rules" id="pr-rules"></p>
       ${typeOpt()}
       <div class="row"><button class="btn" id="pr-x">Cancel</button><button class="btn primary" id="pr-go">Start</button></div>
       <button class="btn wide pr-lbb" id="pr-lbb">Global Leaderboard</button>`, true);
+    const info = () => {
+      $('#pr-rules').textContent = (mode === 's' ? 'No timer: play until you lose all your lives.' : 'You have ' + (mode === '3' ? '3' : '5') + ' minutes. The run also ends if you lose all your lives.') +
+        ' Puzzles are random and get harder as you go. 1 point for each puzzle solved. Your best here: ' + best(mode).score + '.';
+    };
+    info();
+    document.querySelectorAll('.pr-m').forEach((b) => { b.onclick = () => { mode = b.dataset.m; writeJ(MODEKEY, mode); document.querySelectorAll('.pr-m').forEach((x) => x.classList.toggle('on', x === b)); info(); }; });
     wireOpt();
     $('#pr-x').onclick = LP.closeSheet;
-    $('#pr-go').onclick = beginSolo;
-    $('#pr-lbb').onclick = () => { LP.closeSheet(); if (LP.global) LP.global.show('rush'); };
+    $('#pr-go').onclick = () => beginSolo(mode);
+    $('#pr-lbb').onclick = () => { LP.closeSheet(); if (LP.global) LP.global.show(BOARD_OF[mode]); };
   }
   const typeOpt = () => `<label class="pr-opt"><input type="checkbox" id="pr-show"${showType() ? ' checked' : ''}><span><b>Show the puzzle type</b><small>Mate, check, best move or sacrifice. Turn it off for a harder run.</small></span></label>`;
   function wireOpt() { const c = $('#pr-show'); if (c) c.onchange = () => writeJ(TYPEKEY, c.checked); }
@@ -345,6 +390,7 @@
       opp: { s: 0, l: LIVES, hp: 0 }, oppName: pb.role === 'h' ? pb.guestName : pb.hostName, u: '', started: false, timeUp: false, out: false, overPolls: 0, t0: 0,
     });
     Puz.rushStart(hooks, 'Puzzle Battle');
+    syncTitle();
     applyPb(r, s, 0);
     bar();
     r.ticker = setInterval(() => tick(r), 200);
@@ -474,6 +520,18 @@
     stopRun();
     if (res.join) joinBattle(res.id, nt); else waitSheet(res.id, nt, true, 0);
   }
+
+  /* ------------------------------------------------------------ the prompt, shown in the banner at the top */
+  let lastSide = 'w';
+  function syncTitle() {
+    const st = $('#pz-status'), t = $('#pz-title');
+    if (!run || !st || !t) return;
+    const txt = st.textContent.replace(/\u00a0/g, ' ').trim();
+    if (/^black to move/i.test(txt)) lastSide = 'b'; else if (/^white to move/i.test(txt)) lastSide = 'w';
+    t.innerHTML = `<i class="pr-turn ${lastSide}"></i><span>${esc(txt || (run.mode === 'battle' ? 'Puzzle Battle' : 'Puzzle Rush'))}</span>`;
+  }
+  const st0 = $('#pz-status');
+  if (st0) new MutationObserver(syncTitle).observe(st0, { childList: true, characterData: true, subtree: true });
 
   /* ------------------------------------------------------------ menu */
   const c1 = document.querySelector('.mode[data-mode="puzzlerush"]'), c2 = document.querySelector('.mode[data-mode="pbattle"]');
