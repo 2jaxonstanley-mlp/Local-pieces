@@ -296,24 +296,32 @@
   }
 
   /**
-   * A sacrifice that breaks up the enemy's defence: it gives up real material, but it takes (or lands next to) the pieces and pawns
-   * round the enemy king, or a central pawn. Only counts when the search says the position is still as good as the best move
-   * (within `slack` centipawns), so it is never a plain loss of material.
+   * A sacrifice that breaks up the enemy's defence. It has to be an exchange sacrifice (a little material, 100 to 350 centipawns, for
+   * real compensation): it TAKES A PIECE (never a pawn) next to the enemy king, and the search says the position is at least as good as
+   * after the best move. A piece for a pawn is never one, however much it checks. Insane then double-checks it with a deeper search
+   * (see sacSound) before it is allowed to beat the engine's own choice.
    */
+  const PVAL = { 1: 100, 2: 320, 3: 330, 4: 500, 5: 900, 6: 0 };
   function breaksDefence(g, mv, f, score, bestScore) {
-    if (!f || f.isMate || f.afterQs > f.before - 100) return false;          // not a real sacrifice
-    if (score < bestScore - 30 || score < -150 || bestScore > 900) return false;   // it would cost something, or the position is already lost / won
-    const me = g.turn, foe = me === WHITE ? BLACK : WHITE;
+    if (!f || f.isMate) return false;
+    const given = f.before - f.afterQs;                                         // material really lost once the opponent has taken what it can
+    if (given < 100 || given > 350) return false;                                // not a sacrifice, or far too much
+    if (score < bestScore - 10 || score < -100 || bestScore > 700) return false;   // it must cost nothing: as good as the best move, never already lost or won
+    const foe = g.turn === WHITE ? BLACK : WHITE;
+    const tgt = g.board[mv.to];
+    if (!tgt || (tgt & 24) !== foe || (tgt & 7) === 6 || (tgt & 7) === 1) return false;   // it has to take a real piece: a pawn grab, even with check, is not worth a piece
+    if (PVAL[tgt & 7] < 300 && given > 150) return false;
     let ks = -1;
     for (let s = 0; s < 128; s++) { if (s & 0x88) continue; const p = g.board[s]; if (p && (p & 24) === foe && (p & 7) === 6) { ks = s; break; } }
     if (ks < 0) return false;
-    const dist = (a, b) => Math.max(Math.abs((a & 7) - (b & 7)), Math.abs((a >> 4) - (b >> 4)));
-    const tgt = g.board[mv.to];
-    const takes = tgt && (tgt & 24) === foe && (tgt & 7) !== 6;
-    if (takes && dist(mv.to, ks) <= 2) return true;                          // takes a defender of the king
-    if (dist(mv.to, ks) <= 1) return true;                                    // lands right next to the king
-    if (takes && (tgt & 7) === 1 && ((mv.to & 7) === 3 || (mv.to & 7) === 4)) return true;   // takes a central pawn
-    return false;
+    return Math.max(Math.abs((mv.to & 7) - (ks & 7)), Math.abs((mv.to >> 4) - (ks >> 4))) <= 2;   // a defender of the king
+  }
+  /** A deeper look at a sacrifice before Insane trusts it: it must still be (almost) the best move after longer thought. */
+  function sacSound(g0, mv) {
+    try {
+      const B = window.AIAnalyse.run(g0, mv, 1600, 14);
+      return !!(B && B.played && B.top.length && B.played.score >= B.top[0].score - 10);
+    } catch (e) { return false; }
   }
 
   /** The analysis' top moves [{ move, score }], with a defence-breaking sacrifice moved to the front when it is just as good. */
@@ -357,7 +365,7 @@
       // the engine's own choice wins ties; a sound sacrifice beats a plain move of equal rank
       let k = ORDER[rid] + (i === 0 ? 0.5 : 0) + c.score / 1e7;
       // a sacrifice that wrecks the enemy's defence is preferred over an equal quiet move (never over a move the labels would mark down)
-      if (ORDER[rid] >= ORDER.none && breaksDefence(g, c.move, f, c.score, A.top[0].score)) k = Math.max(k, 5.6);
+      if (ORDER[rid] >= ORDER.none && !same(c.move, mv) && breaksDefence(g, c.move, f, c.score, A.top[0].score) && sacSound(g0, c.move)) k = Math.max(k, 5.6);
       if (k > bestK) { bestK = k; bestC = c; }
     });
     return bestC ? (legal.find((x) => same(x, bestC.move)) || pick) : pick;

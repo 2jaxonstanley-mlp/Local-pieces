@@ -55,6 +55,7 @@
   let phase = 'menu';          // menu | names | pick-w | pick-b | play | over | replay
   let selected = -1;
   let legalTargets = [];
+  let pre = [], preSel = -1, preDest = new Set();   // premoves: the queue, the piece picked for the next one, and where it may go
   let pickSel = -1;
   let flipped = false;
   let pendingPromo = false;
@@ -403,7 +404,11 @@
       const el = squareEls[s];
       const p = G.board[s];
 
-      el.classList.toggle('selected', picking || arrP ? s === pickSel : s === selected);
+      el.classList.toggle('selected', picking || arrP ? s === pickSel : s === selected || (G === game && s === preSel));
+      el.classList.toggle('pre-from', G === game && pre.some((m) => m.from === s));
+      el.classList.toggle('pre-to', G === game && pre.some((m) => m.to === s));
+      el.classList.toggle('pre-dest', G === game && preSel >= 0 && preDest.has(s));
+      el.classList.toggle('pre-cap', G === game && preSel >= 0 && preDest.has(s) && !!p);
       el.classList.toggle('last', !!last && (last.from === s || last.to === s));
       el.classList.toggle('check', s === checkSq || s === killW || s === killB || s === dangerW || s === dangerB);
       el.classList.toggle('snail-next', !!snNext && (s === snNext[WHITE] || s === snNext[BLACK]));
@@ -481,6 +486,7 @@
         el._code = code;
       }
     }
+    drawPre();
   }
 
   /** The square of the mover's secret piece while they are looking at it, otherwise -1. */
@@ -944,6 +950,7 @@
     clearTimeout(flipTimer);
     selected = -1;
     legalTargets = [];
+    clearPre();
     pickSel = -1;
     showQueen = false;
     flipped = false;
@@ -1651,9 +1658,101 @@
     if (el) onSquare(+el.dataset.sq);
   });
 
+
+  /* ------------------------------------------------------------ Premoves (Classic, Bullet, Rapid and Online)
+   * While it is the other side's turn you can queue moves. They are checked only when they are about to be played:
+   * the first one plays the moment the opponent has moved, and the queue is cleared if one is no longer legal. */
+  const PRE_MODES = ['basic', 'bullet', 'rapid', 'online'];
+  const preMe = () => (online ? online.me : ai ? ai.human : 0);
+  const preOn = () => !(window.LP.prefs && window.LP.prefs.get('premove') === false) && PRE_MODES.includes(mode) && !bots && !pz && G === game && !modTool();
+  const preWaiting = () => preOn() && phase === 'play' && !over && !pendingPromo && !!preMe() && sheetBg.classList.contains('hidden') && !branch() && viewPly === sans.length
+    && game.turn !== preMe() && (online ? true : !!ai && !playBoth);
+  function clearPre() { pre = []; preSel = -1; preDest = new Set(); }
+  /** The board as it will be once every queued premove has been played (pieces simply move, nothing is checked). */
+  function preBoard() {
+    const b = Array.from(game.board);
+    for (const m of pre) {
+      const p = b[m.from];
+      if (!p) continue;
+      if ((p & 7) === KING && Math.abs((m.to & 7) - (m.from & 7)) === 2) {   // castling moves the rook too
+        const r = m.from & 0x70, up = (m.to & 7) > (m.from & 7);
+        b[r + (up ? 5 : 3)] = b[r + (up ? 7 : 0)]; b[r + (up ? 7 : 0)] = 0;
+      }
+      b[m.to] = m.promo ? ((p & 24) | m.promo) : p;
+      b[m.from] = 0;
+    }
+    return b;
+  }
+  /** Where a piece could go if the opponent's pieces move out of the way: sliders ignore blockers, own pieces still block the square itself. */
+  function preTargets(b, from) {
+    const p = b[from], me = p & 24, t = p & 7, f = from & 7, r = from >> 4, out = [];
+    const free = (nf, nr) => nf >= 0 && nf <= 7 && nr >= 0 && nr <= 7 && !(b[nr * 16 + nf] && (b[nr * 16 + nf] & 24) === me);
+    const add = (nf, nr) => { if (free(nf, nr)) out.push(nr * 16 + nf); };
+    const ray = (df, dr) => { for (let k = 1; k < 8; k++) { const nf = f + df * k, nr = r + dr * k; if (nf < 0 || nf > 7 || nr < 0 || nr > 7) break; add(nf, nr); } };
+    if (t === KNIGHT) [[1, 2], [2, 1], [-1, 2], [-2, 1], [1, -2], [2, -1], [-1, -2], [-2, -1]].forEach((d) => add(f + d[0], r + d[1]));
+    if (t === BISHOP || t === QUEEN) [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach((d) => ray(d[0], d[1]));
+    if (t === ROOK || t === QUEEN) [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach((d) => ray(d[0], d[1]));
+    if (t === KING) {
+      for (let df = -1; df <= 1; df++) for (let dr = -1; dr <= 1; dr++) if (df || dr) add(f + df, r + dr);
+      const home = me === WHITE ? 0 : 7, bit = me === WHITE ? 1 : 4;
+      if (f === 4 && r === home) {   // castling, if the rights are still there and the rook is
+        if ((game.castling & bit) && (b[home * 16 + 7] & 7) === ROOK) add(6, home);
+        if ((game.castling & (bit << 1)) && (b[home * 16] & 7) === ROOK) add(2, home);
+      }
+    }
+    if (t === PAWN) {
+      const dir = me === WHITE ? 1 : -1, start = me === WHITE ? 1 : 6, epRank = me === WHITE ? 4 : 3;
+      add(f, r + dir);
+      if (r === start) add(f, r + 2 * dir);
+      [-1, 1].forEach((df) => { const nf = f + df, nr = r + dir; if (free(nf, nr) && ((b[nr * 16 + nf] & 24) || r === epRank)) out.push(nr * 16 + nf); });
+    }
+    return out;
+  }
+  function preTap(s) {
+    const b = preBoard(), me = preMe(), p = b[s], own = !!p && (p & 24) === me;
+    if (preSel >= 0 && preDest.has(s)) {
+      const from = preSel, last = (b[from] & 7) === PAWN && (s >> 4) === (me === WHITE ? 7 : 0);
+      const add = (promo) => { pre.push({ from, to: s, promo: promo || 0 }); preSel = -1; preDest = new Set(); renderBoard(); preRunSoon(); };
+      if (last) showPromotion({ from, to: s }, (m) => add(m.promo), me); else add(0);   // the promotion piece is asked for straight away
+      return;
+    }
+    if (own && s !== preSel) { preSel = s; preDest = new Set(preTargets(b, s)); renderBoard(); return; }
+    if (s === preSel) { preSel = -1; preDest = new Set(); renderBoard(); return; }
+    clearPre(); renderBoard();   // a tap anywhere else cancels every premove
+  }
+  /** Play the first queued premove if it is our turn now. */
+  function preRun() {
+    if (!pre.length || phase !== 'play' || over || pendingPromo || aiBusy) return;
+    if (game.turn !== preMe()) return;
+    const q = pre.shift();
+    const m = game.legalMoves().find((x) => x.from === q.from && x.to === q.to && (x.promo || 0) === (q.promo || 0));
+    if (!m) { clearPre(); renderBoard(); showToast('Premove cancelled', false); return; }
+    preSel = -1; preDest = new Set();
+    doMove(m);
+  }
+  function preRunSoon() { if (pre.length) setTimeout(preRun, 30); }
+  /** Red arrows for the queued premoves. */
+  function drawPre() {
+    const wrap = boardEl.parentElement;
+    let svg = wrap.querySelector('.pre-arrows');
+    if (!pre.length || G !== game) { if (svg) svg.remove(); return; }
+    const NS = 'http://www.w3.org/2000/svg';
+    if (!svg) { svg = document.createElementNS(NS, 'svg'); svg.setAttribute('class', 'pre-arrows'); wrap.appendChild(svg); }
+    const w = wrap.getBoundingClientRect();
+    svg.setAttribute('viewBox', '0 0 ' + w.width + ' ' + w.height);
+    const c = (s) => { const r = squareEls[s].getBoundingClientRect(); return [r.left - w.left + r.width / 2, r.top - w.top + r.height / 2, r.width]; };
+    svg.innerHTML = '<defs><marker id="pre-ah" markerWidth="3.2" markerHeight="3.2" refX="1.6" refY="1.6" orient="auto"><path d="M0,0 L3.2,1.6 L0,3.2 z" fill="rgba(229,72,77,.9)"/></marker></defs>' + pre.map((m) => {
+      const a = c(m.from), z = c(m.to), dx = z[0] - a[0], dy = z[1] - a[1], len = Math.hypot(dx, dy) || 1, k = z[2] * 0.32 / len;
+      return '<line x1="' + a[0] + '" y1="' + a[1] + '" x2="' + (z[0] - dx * k) + '" y2="' + (z[1] - dy * k) + '" stroke="rgba(229,72,77,.8)" stroke-width="' + (z[2] * 0.17) + '" stroke-linecap="round" marker-end="url(#pre-ah)"/>';
+    }).join('');
+  }
+  window.addEventListener('resize', () => { if (pre.length) drawPre(); });
+  boardEl.addEventListener('contextmenu', (e) => { if (pre.length || preSel >= 0) { e.preventDefault(); clearPre(); renderBoard(); } });
+
   function onSquare(s) {
     if (isArr()) { arrTap(s); return; }
     if (paused && clock && !bots) { showToast('The game is paused.', false); return; }
+    if (preWaiting()) { preTap(s); return; }
     if (online && phase === 'play' && game.turn !== online.me) { showToast('Wait for your opponent.', false); return; }
     if (modTool() && !pendingPromo && sheetBg.classList.contains('hidden')) { modToolTap(s); return; }   // a mod tool is on: normal moves are off
     if (mode === 'guess' && phase === 'play') {
@@ -1912,6 +2011,7 @@
     posKeys.push(positionKey(game));
     selected = -1;
     legalTargets = [];
+    preSel = -1; preDest = new Set();
 
     renderAll();
     animateMove(m, false);
@@ -1932,7 +2032,7 @@
 
     if (end) { endGame(end, mover); clearSession(); }
     else if (pzSpent(mover)) { saveSession(); }
-    else { saveSession(); updateStatus(); syncFlip(true, 380); maybeAI(); refreshHint(); }
+    else { saveSession(); updateStatus(); syncFlip(true, 380); maybeAI(); refreshHint(); preRunSoon(); }
   }
 
   /** Popular puzzle: you have played your last move for the mate and it was not mate, so stop and offer undo / retry. */
@@ -1976,6 +2076,7 @@
   /* --------------------------------------------------------------- end game */
   function endGame(type, mover) {
     phase = 'over';
+    clearPre();
     spawnSel = 0; gwStage = ''; markTool = '';
     coverEl.classList.add('hidden');
     clearTimeout(flipTimer);
@@ -2487,8 +2588,8 @@
   /** Drag and drop (drag.js): only your own pieces, on your turn, in the modes that move by tapping squares. */
   const dragHooks = {
     tap: (s) => onSquare(s),
-    selected: () => selected,
-    can: (s) => (paused && clock && !bots) || (online && game.turn !== online.me) ? false : modTool() ? (modTool() === 'move' && !pendingPromo && !!game.board[s] && sheetBg.classList.contains('hidden')) : phase === 'play' && !aiBusy && !pendingPromo && !isArr() && mode !== 'guess' && coverEl.classList.contains('hidden') && sheetBg.classList.contains('hidden')
+    selected: () => (preWaiting() ? preSel : selected),
+    can: (s) => preWaiting() ? (!!preBoard()[s] && (preBoard()[s] & 24) === preMe()) : (paused && clock && !bots) || (online && game.turn !== online.me) ? false : modTool() ? (modTool() === 'move' && !pendingPromo && !!game.board[s] && sheetBg.classList.contains('hidden')) : phase === 'play' && !aiBusy && !pendingPromo && !isArr() && mode !== 'guess' && coverEl.classList.contains('hidden') && sheetBg.classList.contains('hidden')
       && humanTurn() && !!game.board[s] && (game.board[s] & 24) === game.turn && (branch() || viewPly === sans.length),
   };
   /* ------------------------------------------------------------ Online (the network side lives in online.js) */

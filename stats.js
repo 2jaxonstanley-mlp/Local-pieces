@@ -22,7 +22,7 @@
     ['matewhite', 'Checkmate (W)', '#ebebee'], ['mateblack', 'Checkmate (B)', '#19191c'],
   ];
   const DIFFS = [['easy', 'Easy', '#8fc15b'], ['normal', 'Normal', '#f2c45a'], ['hard', 'Hard', '#ef6a4c'], ['insane', 'Insane', '#c77dff']];
-  const KINDS = { mate: ['Checkmate', 3], check: ['Check', 5], best: ['Best move', 4], sac: ['Sacrifice', 2] };
+  const KINDS = { mate: ['Checkmate', 3], check: ['Check', 5], best: ['Best move', 4], sac: ['Sacrifice', 2], fork: ['Fork', 1] };
 
   /* ------------------------------------------------------------------ saved data */
   const blank = () => ({ v: 1, since: 0, games: [], caps: 0, q: {}, puz: {}, rush: [], secs: 0 });
@@ -180,7 +180,7 @@
     const mine = S.puz[diff] || { s: 0, c: 0, m: 0, k: {} };
     let solved = mine.s || 0, missed = mine.m || 0, clean = mine.c || 0;
     let best = 0, streak = 0;
-    const kinds = Object.assign({ mate: 0, check: 0, best: 0, sac: 0 }, mine.k || {});
+    const kinds = Object.assign({ mate: 0, check: 0, best: 0, sac: 0, fork: 0 }, mine.k || {});
     // Legacy difficulty-only key
     const leg = raw[diff] || {};
     solved = Math.max(solved, leg.solved || 0);
@@ -188,7 +188,7 @@
     best = Math.max(best, leg.best || 0);
     streak = Math.max(streak, leg.streak || 0);
     // Per-type keys: easy:mate, etc.
-    ['mate', 'check', 'best', 'sac'].forEach((t) => {
+    ['mate', 'check', 'best', 'sac', 'fork'].forEach((t) => {
       const o = raw[diff + ':' + t] || {};
       solved += o.solved || 0;
       missed += o.missed || 0;
@@ -213,10 +213,10 @@
     const rows = DIFFS.map(([k, nm, col]) => ({ k, nm, col, s: puzStat(k) }));
     const solved = rows.reduce((a, r) => a + r.s.solved, 0), missed = rows.reduce((a, r) => a + r.s.missed, 0);
     if (!solved && !missed) return empty('Solve a puzzle and your accuracy and streaks will appear here.');
-    const kinds = { mate: 0, check: 0, best: 0, sac: 0 };
+    const kinds = { mate: 0, check: 0, best: 0, sac: 0, fork: 0 };
     rows.forEach((r) => Object.keys(r.s.kinds).forEach((x) => { if (kinds[x] != null) kinds[x] += r.s.kinds[x]; }));
-    const kTot = kinds.mate + kinds.check + kinds.best + kinds.sac;
-    const typeBest = Math.max(puzTypeStat('mate').best, puzTypeStat('check').best, puzTypeStat('best').best, puzTypeStat('sac').best, ...rows.map((r) => r.s.best));
+    const kTot = kinds.mate + kinds.check + kinds.best + kinds.sac + kinds.fork;
+    const typeBest = Math.max(puzTypeStat('mate').best, puzTypeStat('check').best, puzTypeStat('best').best, puzTypeStat('sac').best, puzTypeStat('fork').best, ...rows.map((r) => r.s.best));
     const typeRows = Object.keys(KINDS).map((k) => {
       const ts = puzTypeStat(k);
       return `<div class="st-q"><span class="st-qi">${spr(KINDS[k][1])}</span><span class="st-qn">${KINDS[k][0]}</span>` +

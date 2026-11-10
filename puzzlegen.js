@@ -3,6 +3,7 @@
  *   mate  : White to move, checkmate in 1 or a forced checkmate in 2 (every Black reply is covered).
  *   check : White must give a safe check (checking piece not capturable) within N moves; Black replies after each non-checking move.
  *   best  : White to move, one move is clearly the best (found by a small material search).
+ *   fork  : White has one move that attacks two Black pieces at once (knight, pawn, bishop, rook, queen or royal fork).
  *   sac   : Hard only. White's best move is a sacrifice that gains material (or mate) in the end.
  * No DOM in here, so it can be tested from node.
  */
@@ -461,6 +462,131 @@
     return { type: 'best', diff, pos: posOf(g), good, explain, san: sanOf(g, top.move) };
   }
 
+  /* ----------------------------------------------------------------- fork */
+  const FORK_NAME = { [KING]: 'king', [KNIGHT]: 'knight', [PAWN]: 'pawn', [BISHOP]: 'bishop', [ROOK]: 'rook', [QUEEN]: 'queen' };
+  const PNAME = { [PAWN]: 'pawn', [KNIGHT]: 'knight', [BISHOP]: 'bishop', [ROOK]: 'rook', [QUEEN]: 'queen', [KING]: 'king' };
+  /** After White move m: which Black pieces does the moved piece attack that are worth winning (the king, a more valuable piece, or an undefended one)? Null unless there are two. */
+  function forkInfo(g, m) {
+    g.makeMove(m);
+    const after = g.turn;
+    g.turn = WHITE;
+    let out = null;
+    try {
+      const me = g.board[m.to];
+      if (me && (me & 24) === WHITE) {
+        const seen = new Set(), t = [];
+        for (const x of g.genPieceMoves(m.to)) {
+          const v = g.board[x.to];
+          if (!v || (v & 24) !== BLACK || seen.has(x.to)) continue;
+          seen.add(x.to);
+          const ty = v & 7;
+          if (ty === KING || PV[ty] > PV[me & 7] || !g.attacked(x.to, BLACK)) t.push({ s: x.to, ty });
+        }
+        if (t.length >= 2 && t.some((o) => o.ty !== PAWN)) out = { piece: me & 7, targets: t.sort((a, b) => (b.ty === KING ? 9999 : PV[b.ty]) - (a.ty === KING ? 9999 : PV[a.ty])) };
+      }
+    } catch (e) { out = null; }
+    g.turn = after;
+    g.unmakeMove();
+    return out;
+  }
+
+  /** Does `col` have a capture that wins material outright (takes an undefended piece or a more valuable one)? */
+  function loose(g, col) {
+    const keep = g.turn;
+    g.turn = col;
+    let hit = false;
+    try {
+      for (const m of g.legalMoves()) {
+        const v = g.board[m.to];
+        if (v && (PV[v & 7] >= PV[g.board[m.from] & 7] || !g.attacked(m.to, col === WHITE ? BLACK : WHITE))) { hit = true; break; }
+      }
+    } catch (e) { hit = true; }
+    g.turn = keep;
+    return hit;
+  }
+  /**
+   * A fork puzzle: White has one move that attacks two Black pieces at once (the king counts), and Black cannot save both.
+   * The position is built around the fork (forker, its two victims and a route to the fork square) and then proven with a
+   * material search: the fork has to be the best move and no other move may come close.
+   */
+  function tryFork(diff, level, want) {
+    // want: 'knight' | 'royal' | 'pawn' | 'bishop' | 'rook' | 'queen' (optional)
+    const F = want ? (want === 'royal' ? KNIGHT : { knight: KNIGHT, pawn: PAWN, bishop: BISHOP, rook: ROOK, queen: QUEEN }[want]) : pick(diff === 'easy' ? [KNIGHT, KNIGHT, KNIGHT, PAWN, PAWN, QUEEN] : [KNIGHT, KNIGHT, KNIGHT, PAWN, PAWN, BISHOP, ROOK, QUEEN]);
+    const royal = want ? want === 'royal' : F === KNIGHT && Math.random() < (diff === 'easy' ? 0.25 : 0.35);
+    const g = blank();
+    const lo = F === PAWN ? 2 : 1, hi = F === PAWN ? 5 : 6;
+    let D;
+    do { D = pick(SQUARES); } while (rankOf(D) < lo || rankOf(D) > hi);
+    let reach;
+    if (F === PAWN) reach = [D + 15, D + 17].filter((x) => !(x & 0x88));
+    else { const t = blank(); t.board[D] = WHITE | F; reach = t.genPieceMoves(D).map((m) => m.to); }
+    if (reach.length < 2) return null;
+    const t1 = pick(reach);
+    const rest = reach.filter((x) => x !== t1 && (F !== QUEEN && F !== ROOK && F !== BISHOP || dist(x, t1) > 1));
+    if (!rest.length) return null;
+    const t2 = pick(rest);
+    let S;
+    if (F === PAWN) S = D - 16;
+    else { const t = blank(); t.board[D] = WHITE | F; const opts = t.genPieceMoves(D).map((m) => m.to).filter((x) => x !== t1 && x !== t2); if (!opts.length) return null; S = pick(opts); }
+    if (S & 0x88 || S < 0) return null;
+    const used = new Set([D, S, t1, t2]);
+    const hot = (diff === 'easy') ? [QUEEN, ROOK, ROOK, BISHOP, KNIGHT] : [QUEEN, ROOK, ROOK, BISHOP, KNIGHT, KNIGHT, PAWN];
+    if (royal) { g.board[t1] = BLACK | KING; g.board[t2] = BLACK | pick([QUEEN, QUEEN, ROOK, ROOK, BISHOP]); }
+    else { g.board[t1] = BLACK | pick(hot); g.board[t2] = BLACK | pick(hot); if ((g.board[t1] & 7) === PAWN && (g.board[t2] & 7) === PAWN) return null; }
+    for (const x of [t1, t2]) if ((g.board[x] & 7) === PAWN && (rankOf(x) === 0 || rankOf(x) === 7)) return null;
+    g.board[S] = WHITE | F;
+    const spot = (nearBk) => {
+      for (let i = 0; i < 40; i++) {
+        const x = pick(SQUARES);
+        if (used.has(x) || g.board[x]) continue;
+        if (nearBk && dist(x, nearBk) < 2) continue;
+        return x;
+      }
+      return -1;
+    };
+    // kings
+    let bk = royal ? t1 : -1;
+    if (!royal) { bk = spot(); if (bk < 0) return null; g.board[bk] = BLACK | KING; used.add(bk); }
+    const wk = spot(bk); if (wk < 0) return null; g.board[wk] = WHITE | KING; used.add(wk);
+    const extra = (col, pool, n) => {
+      for (let i = 0; i < n; i++) {
+        const x = spot(); if (x < 0) return false;
+        const ty = pick(pool);
+        if (ty === PAWN && (rankOf(x) === 0 || rankOf(x) === 7)) continue;
+        g.board[x] = col | ty; used.add(x);
+      }
+      return true;
+    };
+    const clutter = diff === 'easy' ? 1 + rnd(2) : diff === 'normal' ? 2 + rnd(3) : 3 + rnd(3);
+    if (!extra(WHITE, [ROOK, BISHOP, KNIGHT, PAWN, PAWN], clutter - (rnd(2)))) return null;
+    if (!extra(BLACK, [PAWN, PAWN, KNIGHT, BISHOP, ROOK, QUEEN], clutter)) return null;
+    if (g.inCheck(BLACK) || g.inCheck(WHITE)) return null;
+    if (loose(g, WHITE) || loose(g, BLACK)) return null;       // no other easy win lying around for either side
+    // the intended fork must exist and be a real fork
+    const mine = g.legalMoves().find((m) => m.from === S && m.to === D && !g.board[D]);
+    if (!mine) return null;
+    if (!forkInfo(g, mine)) return null;
+    const Dp = 3;                                          // fork, reply, capture (a deeper look would also "find" a quiet waiting move that forks later)
+    const top = bestAt(g, Dp);
+    if (!top.move) return null;
+    const info = forkInfo(g, top.move);
+    if (!info || g.board[top.move.to]) return null;       // the best move has to be a fork, not a capture
+    const mated = top.score > MATE - 100;
+    const now = evalSide(g);
+    const need = level >= 1 ? 150 : diff === 'hard' ? 300 : diff === 'easy' ? 250 : 200;
+    if (!mated && top.score - now < need) return null;
+    if (rivalWithin(g, top.move, top.score, Dp, level >= 1 ? 90 : 130)) return null;
+    const good = uniq(g.legalMoves().filter((m) => m.from === top.move.from && m.to === top.move.to)).map(plain);
+    const names = info.targets.slice(0, 3).map((o) => 'the ' + PNAME[o.ty]);
+    const fname = FORK_NAME[info.piece];
+    const isRoyal = info.targets.some((o) => o.ty === KING) && info.targets.some((o) => o.ty === QUEEN) && info.piece === KNIGHT;
+    const gain = mated ? 'It even leads to checkmate.' : 'White comes out about ' + Math.max(1, Math.round((top.score - now) / 100)) + ' points of material ahead.';
+    const explain = 'A ' + fname + ' fork: the ' + fname + ' on ' + alg(top.move.to) + ' attacks ' + names.join(' and ') + ' at once, and Black cannot save both. ' + gain;
+    const kind = isRoyal ? 'royal' : fname;
+    if (want && kind !== want) return null;
+    return { type: 'fork', kind, diff, pos: posOf(g), good, explain, san: sanOf(g, top.move) };
+  }
+
   /* ---------------------------------------------------------------- sacrifice */
   const SAC_POOL = [QUEEN, ROOK, ROOK, BISHOP, BISHOP, KNIGHT, KNIGHT, KNIGHT, PAWN, PAWN, PAWN];
 
@@ -681,6 +807,7 @@
     const gd = diff === 'insane' ? 'hard' : diff;
     let n = 1;
     if (type === 'mate') n = Math.min(3, nWant || (gd === 'easy' ? 1 : gd === 'normal' ? (Math.random() < 0.5 ? 1 : 2) : (Math.random() < 0.45 ? 2 : 3)));
+    const forkWant = type === 'fork' ? pick(['knight', 'knight', 'royal', 'royal', 'pawn', 'pawn', 'bishop', 'rook', 'queen', 'queen']) : undefined;
     const step = () => {
       const slice = Date.now() + 40;
       const age = Date.now() - t0;
@@ -690,6 +817,7 @@
         try {
           p = type === 'mate' ? tryMate(gd, n, level)
             : type === 'check' ? tryCheck(gd, level)
+            : type === 'fork' ? tryFork(gd, level, age < 2500 ? forkWant : undefined)
             : type === 'sac' ? (gd !== 'easy' && Math.random() < 0.85 ? trySacMate(gd, level) : trySac(gd, level))
             : tryBest(gd, level);
         } catch (e) { p = null; }
@@ -700,5 +828,5 @@
     setTimeout(step, 0);
   }
 
-  root.PuzzleGen = { enc, dec, toughest, treeOf, treeDepth, setBudget, isBlown: () => blown, setHorizon: (v) => { horizon = v; }, nega, qs, bestAt, rivalWithin, evalSide, MATE, make, fromPos, posOf, blank, isMate, mateMoves, forcedMate2, mateFirsts, canMate, forcedWithin, findMateMove, bestDefence, isCapture, checkPath, isSafeCheck, sanPath, sanOf, tryMate, tryCheck, tryBest, trySac, trySacMate, uniq };
+  root.PuzzleGen = { enc, dec, toughest, treeOf, treeDepth, setBudget, isBlown: () => blown, setHorizon: (v) => { horizon = v; }, nega, qs, bestAt, rivalWithin, evalSide, MATE, make, fromPos, posOf, blank, isMate, mateMoves, forcedMate2, mateFirsts, canMate, forcedWithin, findMateMove, bestDefence, isCapture, checkPath, isSafeCheck, sanPath, sanOf, tryMate, tryCheck, tryBest, tryFork, trySac, trySacMate, uniq };
 })();

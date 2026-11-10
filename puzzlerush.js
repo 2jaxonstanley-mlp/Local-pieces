@@ -18,7 +18,7 @@
   const MODES = { 3: '3 min', 5: '5 min', s: 'Survival' };      // Puzzle Rush modes: two timed, one with no timer
   const BOARD_OF = { 3: 'rush3', 5: 'rush5', s: 'rush' };      // Global Leaderboard board for each mode
   const MATEIN = { easy: [1, 2], normal: [1, 2, 3], hard: [2, 3, 4, 5], insane: [2, 3, 4, 5, 6, 7, 8] };
-  const TYPES = ['mate', 'mate', 'check', 'best', 'sac'];
+  const TYPES = ['mate', 'mate', 'check', 'best', 'sac', 'fork', 'fork'];
 
   const readJ = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } };
   const writeJ = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* ignore */ } };
@@ -41,7 +41,7 @@
   /** A puzzle's rating, used for "Highest Solved". */
   function ratingOf(p) {
     const base = { easy: 500, normal: 1000, hard: 1600, insane: 2200 }[p.diff || 'normal'] || 1000;
-    const t = p.type === 'mate' ? ((p.n || 1) - 1) * 120 : p.type === 'sac' ? 150 : p.type === 'best' ? 50 : 0;
+    const t = p.type === 'mate' ? ((p.n || 1) - 1) * 120 : p.type === 'sac' ? 150 : p.type === 'fork' ? 80 : p.type === 'best' ? 50 : 0;
     return Math.min(3200, base + t);
   }
   function slim(p) { const q = Object.assign({}, p); delete q.explain; q.rt = ratingOf(q); return q; }
@@ -68,7 +68,7 @@
   const mmss = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
   const myName = () => (LP.profile && LP.profile.name && LP.profile.name()) || 'You';
 
-  const typeLabel = (p) => (!p ? '' : p.type === 'mate' ? 'Mate in ' + (p.n || 1) : p.type === 'check' ? 'Checks only' : p.type === 'best' ? 'Best move' : 'Sacrifice');
+  const typeLabel = (p) => (!p ? '' : p.type === 'mate' ? 'Mate in ' + (p.n || 1) : p.type === 'check' ? 'Checks only' : p.type === 'best' ? 'Best move' : p.type === 'fork' ? ({ royal: 'Royal fork', knight: 'Knight fork', pawn: 'Pawn fork', bishop: 'Bishop fork', rook: 'Rook fork', queen: 'Queen fork' }[p.kind] || 'Fork') : 'Sacrifice');
   function bar() {
     const top = $('#pr-bar'), foot = $('#pr-foot'), r = run;
     if (!top || !foot) return;
@@ -266,7 +266,7 @@
     $('#pr-go').onclick = () => beginSolo(mode);
     $('#pr-lbb').onclick = () => { LP.closeSheet(); if (LP.global) LP.global.show(BOARD_OF[mode]); };
   }
-  const typeOpt = () => `<label class="pr-opt"><input type="checkbox" id="pr-show"${showType() ? ' checked' : ''}><span><b>Show the puzzle type</b><small>Mate, check, best move or sacrifice. Turn it off for a harder run.</small></span></label>`;
+  const typeOpt = () => `<label class="pr-opt"><input type="checkbox" id="pr-show"${showType() ? ' checked' : ''}><span><b>Show the puzzle type</b><small>Mate, check, best move, sacrifice or fork. Turn it off for a harder run.</small></span></label>`;
   function wireOpt() { const c = $('#pr-show'); if (c) c.onchange = () => writeJ(TYPEKEY, c.checked); }
 
   /* ------------------------------------------------------------ Puzzle Battle (online) */
@@ -289,6 +289,7 @@
       $('#pb-x').onclick = LP.closeSheet;
       return;
     }
+    N().get({ a: 'ping' });   // wake the server while the person is choosing
     LP.openSheet(`<h2>Puzzle Battle<span class="sub">Race a friend on the same puzzles for 3 minutes. The highest score wins.</span></h2>
       ${typeOpt()}
       <div class="stack">
@@ -432,7 +433,7 @@
     }
   }
 
-  function send(r) { N().post({ a: 'pscore', id: r.id, tok: r.tok, s: r.score, l: r.lives, hp: r.hs }, 3); }
+  function send(r) { N().post({ a: 'pscore', id: r.id, tok: r.tok, s: r.score, l: r.lives, hp: r.hs }, 3, 'score'); }   // its own lane: never waits behind a puzzle upload
 
   /** Whoever needs the next puzzle first makes it and sends it; the other one downloads it, so both always get the same ones. */
   function battleFill(r) {
@@ -445,7 +446,7 @@
       if (run !== r || r.over) return;
       if (r.pz.length !== k) { battleFill(r); return; }       // the other player's puzzle got there first
       p = slim(p);
-      const res = await N().post({ a: 'pput', id: r.id, tok: r.tok, k, data: p }, 2);
+      const res = await N().post({ a: 'pput', id: r.id, tok: r.tok, k, data: p }, 2, 'puzzle');
       if (run !== r) return;
       if (res && res.ok && r.pz.length === k) r.pz.push(p);
       else if (res && res.full) r.full = true;
@@ -478,12 +479,9 @@
       r.claiming = true;
       N().post({ a: 'pend', id: r.id, tok: r.tok, reason: 'abandon' }, 2).then(() => { r.claiming = false; });
     }
-    if (r.over && s.rematch && !r.myRematch && !r.rematchShown) {
-      r.rematchShown = true;
-      LP.openSheet(`<h2>Rematch?<span class="sub">Your opponent wants to play again.</span></h2>
-        <div class="row"><button class="btn" id="r-no">No thanks</button><button class="btn primary" id="r-yes">Accept</button></div>`);
-      $('#r-no').onclick = () => { showResult(r); };
-      $('#r-yes').onclick = () => rematch(r);
+    if (r.over && s.rematch && s.rematch !== r.rmId) {   // the other player asked: both screens count down together, no prompt
+      r.rmId = s.rematch;
+      startRematch(r, s.rematch, s.rat, (s.now || Date.now()) - Date.now(), false);
     }
   }
 
@@ -512,13 +510,21 @@
   }
 
   async function rematch(r) {
-    r.myRematch = true;
+    if (r.rmBusy || r.rmActive) return;
+    r.rmBusy = true;
     LP.openSheet('<h2>Rematch…</h2>');
-    const nt = N().rnd();
-    const res = await N().post({ a: 'rematch', id: r.id, tok: r.tok, newTok: nt }, 2);
-    if (!res || res.error || !res.id) { r.myRematch = false; showResult(r); return; }
-    stopRun();
-    if (res.join) joinBattle(res.id, nt); else waitSheet(res.id, nt, true, 0);
+    const t0 = Date.now();
+    const res = await N().post({ a: 'rematch', id: r.id, tok: r.tok }, 2);
+    r.rmBusy = false;
+    if (run !== r) return;
+    if (!res || res.error || !res.id) { showResult(r); return; }
+    r.rmId = res.id;
+    startRematch(r, res.id, res.at, res.now - (t0 + Date.now()) / 2, true);
+  }
+  function startRematch(r, id, at, off, mine) {
+    if (run !== r || r.rmActive) return;
+    r.rmActive = true;
+    N().countdown({ id, tok: r.tok, at, off, mine, go: (s) => begin(id, r.tok, s), gone: () => { r.rmActive = false; if (run === r) showResult(r); } });
   }
 
   /* ------------------------------------------------------------ the prompt, shown in the banner at the top */

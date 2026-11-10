@@ -809,7 +809,7 @@
     easy:    { maxDepth: 1, time: 300,  q: 0, noise: 120, blunder: 0.18, snail: 0.35 },
     medium:  { maxDepth: 2, time: 500,  q: 1, noise: 90,  blunder: 0.10, snail: 0.65 },        // shown as about 600
     hard:    { maxDepth: 3, time: 700,  q: 2, noise: 40,  blunder: 0.03, book: true, snail: 0.95 },  // shown as about 1100
-    insane:  { maxDepth: 30, time: 2800, q: 8, noise: 0,  blunder: 0, book: true, polish: true, snail: 1.2, swindle: true },   // plays book lines, then double-checks its move so it avoids labelled mistakes and goes for brilliant/best moves
+    insane:  { maxDepth: 30, time: 5000, q: 8, noise: 0,  blunder: 0, book: true, polish: true, snail: 1.2, swindle: true },   // plays book lines, then double-checks its move so it avoids labelled mistakes and goes for brilliant/best moves
     // Godly: searches 5 full moves (10 plies), keeps its 3 best moves and picks one at random 3/6, 2/6, 1/6
     godly:   { maxDepth: 14, time: 2600, q: 8, noise: 0,  blunder: 0, snail: 1.2, multi: 5, pick: 3, weights: [3, 2, 1], castle: 120, guard: true, window: 70, mate: true, swindle: true },
     hint:    { maxDepth: 30, time: 4200, scale: 1.8, q: 10, noise: 0,  blunder: 0, multi: 3, pick: 3, swindle: true },   // Sandbox: the 3 best moves, thought about for longer than any computer level

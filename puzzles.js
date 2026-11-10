@@ -12,7 +12,8 @@
   const FILLED = { 1: '♟', 2: '♞', 3: '♝', 4: '♜', 5: '♛', 6: '♚' };
   const glyph = (p) => FILLED[p & 7] + '︎';
   const DIFF = { easy: 'Easy', normal: 'Normal', hard: 'Hard', insane: 'Insane' };
-  const TITLE = { mate: 'Checkmate puzzles', check: 'Check puzzles', best: 'Best move', sac: 'Sacrifice' };
+  const FORK_TITLE = (p) => ({ royal: 'Royal fork', knight: 'Knight fork', pawn: 'Pawn fork', bishop: 'Bishop fork', rook: 'Rook fork', queen: 'Queen fork', king: 'King fork' }[p.kind] || 'Fork');
+  const TITLE = { mate: 'Checkmate puzzles', check: 'Check puzzles', best: 'Best move', sac: 'Sacrifice', fork: 'Fork' };
   const PIECE_NAME = { 5: 'Queen', 4: 'Rook', 3: 'Bishop', 2: 'Knight' };
 
   let cfg = null;          // { type, diff, n } (n: wanted mate length, 0 = any for the level)
@@ -140,6 +141,7 @@
     if (P && P.type === 'mate') goal = 'Checkmate in ' + P.n + (P.n === 1 ? ' move.' : ' moves.');
     else if (P && P.type === 'check') goal = 'Safe check in ' + P.limit + (P.limit === 1 ? ' move' : ' moves') + ' (piece must not be capturable)' + (userMoves ? ' · ' + movesLeft() + ' left' : '') + '.';
     else if (P && P.type === 'sac') goal = 'Find the winning sacrifice: give material to gain more.';
+    else if (P && P.type === 'fork') goal = 'Find the fork: attack two pieces at once so Black cannot save both.';
     const isAn = state === 'analysis', isWrong = state === 'wrong';
     $('#pz-goal').textContent = state === 'gen' ? 'Setting up the board…' : isAn ? 'Move both sides freely. There are no right or wrong moves.' : isWrong ? 'Undo the move or retry the puzzle.' : goal;
     const s = stats.get();
@@ -180,6 +182,7 @@
     if (P.type === 'mate') return P.n >= 2 && userMoves >= 1 ? (P.n - userMoves === 1 ? 'Now deliver checkmate' : 'Keep forcing: checkmate in ' + (P.n - userMoves) + ' more') : 'White to move: find the checkmate' + (P.n > 1 ? ' in ' + P.n : '');
     if (P.type === 'check') return 'Give a safe check in ' + movesLeft() + (movesLeft() === 1 ? ' move' : ' moves') + ' or fewer. Black will reply.';
     if (P.type === 'sac') return 'Sacrifice material to win more back (or force mate).';
+    if (P.type === 'fork') return 'One move attacks two pieces at once. Find the fork.';
     return 'Which move is best for White?';
   }
 
@@ -272,10 +275,10 @@
   }
   /** The solution as a title, a lead sentence, one explained step per move and a note on Black's other defences. */
   function explainParts(p) {
-    if (p.type === 'best' || p.type === 'sac') {
+    if (p.type === 'best' || p.type === 'sac' || p.type === 'fork') {
       let lead = p.explain || '';
       if (p.type === 'sac') lead += ' That is roughly ' + (p.loss != null ? Math.max(1, Math.round(p.loss / 100)) : 'some') + ' point(s) of material at first, so a quick look at safe moves can mislead you.';
-      return { title: (p.type === 'sac' ? 'Sacrifice: ' : 'Best move: ') + p.san, lead, steps: narrate(p.pos, [p.good[0]], ''), defence: 'Habit to build: look at every check, capture and threat for both sides, and ask what each one achieves.' };
+      return { title: (p.type === 'sac' ? 'Sacrifice: ' : p.type === 'fork' ? FORK_TITLE(p) + ': ' : 'Best move: ') + p.san, lead, steps: narrate(p.pos, [p.good[0]], ''), defence: 'Habit to build: look at every check, capture and threat for both sides, and ask what each one achieves.' };
     }
     if (p.type === 'mate') {
       const plains = [];
@@ -538,6 +541,7 @@
       return { text: 'That does not force mate in ' + X + '.', arrow: null };
     }
     if (kind === 'check') return { text: 'That checks, but it is not a safe check. Find a check that nothing can take.', arrow: null };
+    if (kind === 'fork') return { text: 'That does not win material by force. Look for a move that attacks two pieces at once.', arrow: null };
     if (kind === 'sac') return { text: 'Not the sacrifice. Look for a move that gives up material to win more back (or to force mate).', arrow: null };
     return { text: 'That is not the strongest move. Look at checks, captures and threats first.', arrow: null };
   }
@@ -651,7 +655,7 @@
   function afterBest(m) {
     const ok = P.good.some((x) => x.f === m.from && x.t === m.to);
     if (ok) { log.push(plain(m)); userMoves++; solve(); }
-    else badMove(m, P.type === 'sac' ? 'sac' : 'best', 0);
+    else badMove(m, P.type === 'sac' ? 'sac' : P.type === 'fork' ? 'fork' : 'best', 0);
   }
 
   function solve() {
@@ -673,7 +677,7 @@
     }
     updateInfo();
     let msg;
-    if (P.type === 'best' || P.type === 'sac') msg = 'Correct! ' + P.san + '. ' + P.explain;
+    if (P.type === 'best' || P.type === 'sac' || P.type === 'fork') msg = 'Correct! ' + P.san + '. ' + P.explain;
     else if (P.type === 'mate') msg = 'Checkmate! Mate in ' + P.n + ' solved. The explanation is above.';
     else msg = 'Check! Solved in ' + userMoves + (userMoves === 1 ? ' move.' : ' moves.');
     setStatus(msg, 'good');
@@ -685,7 +689,7 @@
     if (busy || state === 'solved' || state === 'gen' || !P) return;
     stats.miss();
     let from = -1;
-    if (P.type === 'best' || P.type === 'sac') from = P.good[0].f;
+    if (P.type === 'best' || P.type === 'sac' || P.type === 'fork') from = P.good[0].f;
     else if (P.type === 'mate') {
       if (tw) from = PG.dec(tw[0]).f;
       else if (userMoves >= 1) { const mv = P.n - userMoves <= 3 ? PG.findMateMove(g, P.n - userMoves) : null; if (mv) from = mv.from; else { toast('That line is off the prepared solution. Try Retry.'); return; } }
@@ -712,7 +716,7 @@
     setStatus('Playing solution…', 'dim');
 
     const steps = [];             // sequence of plain moves (White and Black) to animate
-    if (P.type === 'best' || P.type === 'sac') {
+    if (P.type === 'best' || P.type === 'sac' || P.type === 'fork') {
       steps.push(P.good[0]);
     } else if (P.type === 'mate') {
       if (tw) { for (let k = 0; k < P.n; k++) { steps.push({ _twm: true }); if (k < P.n - 1) steps.push({ _tbr: true }); } }
@@ -739,7 +743,7 @@
         render();
         updateInfo();
         let msg = 'Solution played.';
-        if (P.type === 'best' || P.type === 'sac') msg = (P.type === 'sac' ? 'Sacrifice' : 'Best move') + ': ' + P.san + '. ' + P.explain;
+        if (P.type === 'best' || P.type === 'sac' || P.type === 'fork') msg = (P.type === 'sac' ? 'Sacrifice' : P.type === 'fork' ? 'Fork' : 'Best move') + ': ' + P.san + '. ' + P.explain;
         else if (P.type === 'mate') msg = P.n === 1 ? 'Checkmate solution. The explanation is above.' : 'Forced mate in ' + P.n + ' (one way of defending shown). The explanation is above.';
         else msg = 'Safe check solution.';
         setStatus(msg, 'good');
@@ -909,6 +913,7 @@
     { id: 'check', icon: 5, name: 'Check', sub: 'Safe check — Black replies each turn.' },
     { id: 'best', icon: 4, name: 'Best move', sub: 'Find the strongest move.' },
     { id: 'sac', icon: 2, name: 'Sacrifice', sub: 'Give material to win more, or to force mate.' },
+    { id: 'fork', icon: 1, name: 'Fork', sub: 'Knight, pawn, bishop, rook, queen and royal forks.' },
   ];
   const LEVELS = [
     { id: 'easy', name: 'Easy', sub: 'Clear and straightforward.', n: 1 },
@@ -923,6 +928,7 @@
     mate: { easy: 'Few pieces, so it is easy to see. Mate in 1 or 2.', normal: 'A fuller board. Mate in 1, 2 or 3.', hard: 'Busy board with forcing moves. Mate in 2 to 5.', insane: 'Crowded board, sacrifices and discovered checks. Mate in 2 to 8.' },
     check: { easy: 'A safe check, a couple of moves at most.', normal: 'More pieces defending, up to 3 moves.', hard: 'A crowded board: the safe check takes 3 moves.' },
     best: { easy: 'Win something clear.', normal: 'The best move is not the obvious capture.', hard: 'A deep tactic that a short look misses.' },
+    fork: { easy: 'A clear fork, often a knight, with few pieces around.', normal: 'More pieces on the board: pawn, bishop, rook and queen forks too.', hard: 'A crowded board where the fork wins a full piece.' },
     sac: { easy: 'A simple sacrifice that wins quickly.', normal: 'A sacrifice that leads to mate or a bigger win.', hard: 'A big sacrifice and a deep combination.' },
   };
   const meter = (n) => `<span class="pz-lv lv${n}" aria-hidden="true"><i class="${n >= 1 ? 'on' : ''}"></i><i class="${n >= 2 ? 'on' : ''}"></i><i class="${n >= 3 ? 'on' : ''}"></i></span>`;

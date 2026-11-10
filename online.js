@@ -8,6 +8,8 @@
  *     the server for 30 seconds (the page was closed).
  *   - Fast updates: polls are held open by the server and answer the moment something changes.
  *   - Resign, draw offers and rematches go through the same server.
+ *   - Rematch: the server makes the next game straight away (colours swapped); both screens count down together and start
+ *     at the same moment. Either player can decline during the countdown.
  */
 (() => {
   'use strict';
@@ -22,7 +24,7 @@
   const label = (mode, base, inc) => (mode === 'timed' ? (base % 60 === 0 ? base / 60 + ' min' : base + ' s') + (inc ? ' + ' + inc : '') : 'Unlimited');
 
   /* ---------------------------------------------------------------- network */
-  let chain = Promise.resolve();
+  const chains = {};   // writes go one after another per lane: puzzle scores never wait behind a puzzle upload
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   function rawPost(body) {
     return fetch(url(), { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) }).then((r) => r.json());
@@ -34,7 +36,7 @@
       .then((r) => r.json()).finally(() => clearTimeout(t));
   }
   /** Writes go one after another (a move must reach the server before the result), and are retried if the connection drops. */
-  function post(body, tries) {
+  function post(body, tries, lane) {
     const run = async () => {
       for (let i = 0; i < (tries || 5); i++) {
         try {
@@ -45,8 +47,9 @@
       }
       return { error: 'No connection' };
     };
-    const p = chain.then(run);
-    chain = p.then(() => {}, () => {});
+    lane = lane || 'main';
+    const p = (chains[lane] || Promise.resolve()).then(run);
+    chains[lane] = p.then(() => {}, () => {});
     return p;
   }
   const get = (params) => rawGet(params).catch(() => ({ error: 'No connection' }));
@@ -83,6 +86,7 @@
       $('#on-x').onclick = LP.closeSheet;
       return;
     }
+    get({ a: 'ping' });   // wake the server while the person is choosing
     LP.openSheet(`<h2>Online<span class="sub">Play a friend on another device.</span></h2>
       <div class="stack">
         <button class="btn big primary" id="on-new">Create a game</button>
@@ -261,13 +265,10 @@
       $('#d-no').onclick = () => { LP.closeSheet(); post({ a: 'answerdraw', id: net.id, tok: net.tok, accept: 0 }); };
     }
     if (!s.draw) { if (net.offered) { net.offered = false; if (co.state().phase === 'play') co.toast('Draw declined'); } net.drawShown = false; }
-    // rematch asked by the other player
-    if (s.rematch && s.status === 'over' && !net.rematchShown && !net.myRematch) {
-      net.rematchShown = true;
-      LP.openSheet(`<h2>Rematch?<span class="sub">Your opponent wants to play again.</span></h2>
-        <div class="row"><button class="btn" id="r-no">No thanks</button><button class="btn primary" id="r-yes">Accept</button></div>`);
-      $('#r-no').onclick = LP.closeSheet;
-      $('#r-yes').onclick = () => rematch();
+    // rematch asked by the other player: no prompt, both screens count down together (they can decline)
+    if (s.rematch && s.status === 'over' && s.rematch !== net.rmId) {
+      net.rmId = s.rematch;
+      startRematch(net, s.rematch, s.rat, (s.now || Date.now()) - Date.now(), false);
     }
     // the other browser went quiet
     if (co.state().phase === 'play' && s.oppAgo > IDLE_MS && !net.claiming) {
@@ -287,18 +288,54 @@
   }
 
   /* ---------------------------------------------- calls made by the game */
+  /** Ask for a rematch. The server answers with the new game and the moment it starts. */
   async function rematch() {
-    if (!net) return;
-    const nt = rnd();
-    net.myRematch = true;
+    const my = net;
+    if (!my || my.rmBusy || my.rmActive) return;
+    my.rmBusy = true;
     LP.openSheet('<h2>Rematch…</h2>');
-    const r = await post({ a: 'rematch', id: net.id, tok: net.tok, newTok: nt }, 2);
+    const t0 = Date.now();
+    const r = await post({ a: 'rematch', id: my.id, tok: my.tok }, 2);
+    my.rmBusy = false;
+    if (net !== my) return;
     if (!r || r.error || !r.id) { LP.closeSheet(); LP.chessOnline.toast((r && r.error) || 'Could not ask for a rematch'); return; }
-    const old = net; stopAllKeepGame(old);
-    if (r.join) { joinGame(r.id, nt); return; }
-    waitSheet(r.id, nt, { mode: 'x', base: 0, inc: 0 }, true);
+    my.rmId = r.id;
+    startRematch(my, r.id, r.at, r.now - (t0 + Date.now()) / 2, true);
   }
-  function stopAllKeepGame(old) { if (old) clearTimeout(old.timer); net = null; }
+  function startRematch(my, id, at, off, mine) {
+    if (!my || my.rmActive) return;
+    my.rmActive = true;
+    countdown({ id, tok: my.tok, at, off, mine, go: (s) => begin(id, my.tok, s), gone: () => { my.rmActive = false; } });
+  }
+
+  /** The rematch countdown, shared with Puzzle Battle. o: { id, tok, at (server time), off (server minus this device), mine, go(state), gone(iDeclined) } */
+  function countdown(o) {
+    let stop = false, s0 = null, mine = false, busy = false, timer = 0;
+    LP.openSheet(`<div class="rm-count"><small>Rematch</small><b id="rm-n">3</b><span id="rm-s">Colours swap. Starting together.</span></div>
+      <button class="btn wide" id="rm-x">${o.mine ? 'Cancel' : 'Decline'}</button>`, false);
+    const end = () => { stop = true; clearInterval(timer); };
+    const cancelled = () => { end(); LP.closeSheet(); if (!mine) LP.chessOnline.toast('Your opponent declined the rematch'); if (o.gone) o.gone(mine); };
+    $('#rm-x').onclick = () => { mine = true; end(); post({ a: 'decline', id: o.id, tok: o.tok }, 2); LP.closeSheet(); if (o.gone) o.gone(true); };
+    (async () => {   // watch the new game: it gives us our state, and tells us at once if the other player declines
+      let u = '';
+      while (!stop) {
+        const s = await get({ a: 'poll', id: o.id, tok: o.tok, since: 0, wait: 1, u, pn: 0 });
+        if (stop) return;
+        if (s && !s.error) { s0 = s; u = s.upd || u; if (s.status === 'cancelled') { cancelled(); return; } }
+        await sleep(s && s.error ? 1000 : 100);
+      }
+    })();
+    timer = setInterval(async () => {
+      const left = o.at - (Date.now() + o.off), n = $('#rm-n'), t = $('#rm-s');
+      if (stop || !n) return;
+      if (left > 0) { n.textContent = Math.ceil(left / 1000); return; }
+      n.textContent = '…';
+      if (s0 && s0.status === 'active' && s0.you && s0.ack) { end(); o.go(s0); return; }   // both of us have the game open: go
+      if (t) t.textContent = 'Waiting for your opponent…';
+      if (left < -9000) { end(); post({ a: 'decline', id: o.id, tok: o.tok }, 1); LP.closeSheet(); LP.chessOnline.toast('Your opponent did not join the rematch'); if (o.gone) o.gone(true); return; }
+      if (!busy) { busy = true; const s = await get({ a: 'poll', id: o.id, tok: o.tok, since: 0, pn: 0 }); busy = false; if (s && !s.error && !stop) s0 = s; }
+    }, 100);
+  }
 
   LP.onlineNet = {
     sendMove(uci, clocks) {
@@ -326,7 +363,7 @@
   };
 
   /** The network helpers are shared with Puzzle Battle and the global leaderboard. */
-  LP.onlineApi = { get, post, rawGet, rawPost, rnd, url, sleep };
+  LP.onlineApi = { get, post, rawGet, rawPost, rnd, url, sleep, countdown };
 
   const card = document.querySelector('.mode[data-mode="online"]');
   if (card) card.addEventListener('click', mainSheet);

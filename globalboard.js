@@ -47,7 +47,7 @@
   async function submitRush(score, hs, mode) {
     if (!enabled()) return null;
     const pfp = await thumb(LP.profile && LP.profile.pfp && LP.profile.pfp());
-    const r = await N().post({ a: 'lbsubmit', pid, name: nameNow(), pfp, score, hs, m: mode || 's' }, 3);
+    const r = await N().post({ a: 'lbsubmit', pid, name: nameNow(), pfp, score, hs, m: mode || 's' }, 3, 'lb');
     return r && r.ranks ? r : null;
   }
 
@@ -59,7 +59,7 @@
     const k = JSON.stringify(s);
     if (!force && k === lastSent) return Promise.resolve();
     lastSent = k;
-    return N().post(Object.assign({ a: 'lbstats', pid, name: nameNow() }, s), 2).then((r) => { if (!r || r.error) lastSent = ''; });
+    return N().post(Object.assign({ a: 'lbstats', pid, name: nameNow() }, s), 2, 'lb').then((r) => { if (!r || r.error) lastSent = ''; });
   }
 
   /* ------------------------------------------------------------------ page */

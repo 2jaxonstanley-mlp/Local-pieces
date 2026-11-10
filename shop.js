@@ -57,9 +57,17 @@
   ].map(([id, name, r]) => ({ id, name, r }));
   /* app backgrounds: plain colours, and one legendary where you insert your own picture (kept on this device) */
   const BGS = [
-    { id: 'green', name: 'Green', bg: '#12351f', panel: '#1b4a2c', panel2: '#255a38', line: '#2f6b46', r: 'common' },
-    { id: 'custom', name: 'Your Image', custom: true, r: 'legendary' },
+    { id: 'green', name: 'Green', bg: '#12351f', panel: '#1b4a2c', panel2: '#255a38', line: '#2f6b46', acc: '#5fd38a', r: 'common' },
   ];
+  /* the other colour themes are made from one colour: the panels and lines are that colour a little lighter, and acc tints highlights */
+  const lift = (hex, t) => { const n = parseInt(hex.slice(1), 16), f = (v) => Math.round(v + (255 - v) * t); return '#' + [f(n >> 16), f((n >> 8) & 255), f(n & 255)].map((v) => v.toString(16).padStart(2, '0')).join(''); };
+  [['blue', 'Blue', '#10233d', '#4f9cf5', 'common'], ['teal', 'Teal', '#0f302f', '#2fd4c0', 'common'], ['purple', 'Purple', '#21143a', '#b066f0', 'rare'],
+   ['crimson', 'Crimson', '#38141a', '#ff6b6b', 'rare'], ['gold', 'Gold', '#2f2510', '#f5b82e', 'epic'], ['pink', 'Pink', '#3a1530', '#ff7ac8', 'epic']]
+    .forEach(([id, name, bg, acc, r]) => BGS.push({ id, name, bg, panel: lift(bg, .08), panel2: lift(bg, .14), line: lift(bg, .24), acc, r }));
+  /* two legendary backgrounds that move slowly (still, if the device asks for less motion) */
+  BGS.push({ id: 'aurora', name: 'Aurora', bg: '#0a1a28', panel: '#13293b', panel2: '#1b3a50', line: '#2a5470', acc: '#4ade80', anim: 'aurora', r: 'legendary' });
+  BGS.push({ id: 'stars', name: 'Starfield', bg: '#080a1c', panel: '#12152d', panel2: '#1a1e3d', line: '#2b3160', acc: '#8fb4ff', anim: 'stars', r: 'legendary' });
+  BGS.push({ id: 'custom', name: 'Your Image', custom: true, r: 'legendary' });
   const IMGKEY = 'localPieces.customBg';
   const RETRO = { id: '', name: 'Retro', pk: 'sheet', sheet: 'pk-retro-hd.png' };   // the main skin everyone starts with
   const CRATES = {
@@ -156,7 +164,8 @@
     root.setProperty('--panel-2', bgi && bgi.panel2 ? bgi.panel2 : '#363636');
     root.setProperty('--line', bgi && bgi.line ? bgi.line : '#404040');
     root.setProperty('--bg-img', pic ? 'url(' + pic + ')' : 'none');
-    document.body.dataset.bgk = pic ? 'img' : '';
+    root.setProperty('--acc', bgi && bgi.acc ? bgi.acc : '#ffffff');
+    document.body.dataset.bgk = pic ? 'img' : bgi && bgi.anim ? bgi.anim : '';
     document.body.dataset.pack = '1';
     PK = p && p.pk ? p.pk : '';
     PX = p && p.px ? '1' : '';
@@ -196,7 +205,7 @@
   };
   /* pieces get their picture/neon look and the accessory: found by their glyph, so no other file has to know about it */
   function tagKings() {
-    document.querySelectorAll('.piece, .cp').forEach((pe) => {
+    document.querySelectorAll('.piece:not([data-prev]), .cp').forEach((pe) => {
       const code = pe.textContent.charCodeAt(0), kind = KIND[code];
       const slot = slotOf(pe.classList.contains('b')), sk = skinOf(slot), pk = sk.pk || '', px = sk.px ? '1' : '';
       const h = find('hat', slot.hat), on = slot.hatOn || 'k';
@@ -409,7 +418,7 @@
     }
     if (slot === 'bg') {
       const pic = it.custom ? customImg() : '';
-      return `<span class="pv-bg${it.custom ? ' cust' : ''}" style="background:${pic ? 'center / cover url(' + pic + ')' : it.bg || '#1f1f1f'}">${it.custom && !pic ? '<b>＋</b>' : ''}</span>`;
+      return `<span class="pv-bg${it.custom ? ' cust' : ''}${it.anim ? ' anim-' + it.anim : ''}" ${it.anim ? '' : `style="background:${pic ? 'center / cover url(' + pic + ')' : it.bg || '#1f1f1f'}"`}>${it.custom && !pic ? '<b>＋</b>' : ''}</span>`;
     }
     if (slot === 'piece') {
       if (it.pk === 'sheet') return `<span class="pv-king pv-sheet" style="--sheet:url(${it.sheet})"><b data-pk="sheet" ${it.px ? 'data-px="1"' : ''} style="--px:${3 / 11 * 100}%"></b><b data-pk="sheet" ${it.px ? 'data-px="1"' : ''} style="--px:${9 / 11 * 100}%"></b></span>`;
@@ -521,6 +530,81 @@
     popup((id ? esc(find(slot, id).name) : dflt[slot].name) + ' equipped');
   }
 
+
+  /* ------------------------------------------------------------------ preview on hover (mouse) or press-and-hold (phone) */
+  const GLYPH = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
+  const BACK = ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'];
+  /** One piece of a preview board, drawn exactly like a real one but never touched by tagKings (data-prev). */
+  function miniPiece(kind, black, sk, hat) {
+    const pe = document.createElement('span');
+    pe.className = 'piece ' + (black ? 'b' : 'w'); pe.dataset.prev = '1'; pe.textContent = GLYPH[kind];
+    const pk = sk.pk || '';
+    if (pk) {
+      pe.dataset.pk = pk; pe.dataset.k = kind;
+      if (sk.px) pe.dataset.px = '1';
+      if (pk === 'sheet') { pe.style.setProperty('--px', ((SHEET_AT[kind] + (black ? 6 : 0)) / 11 * 100) + '%'); pe.style.setProperty('--sheet', 'url(' + sk.sheet + ')'); }
+    }
+    if (hat && kind === 'k') {
+      const hp = hatPos(sk.id || '', kind, hat.id);
+      pe.dataset.hat = hat.id; pe.style.setProperty('--hx', hp.x + '%'); pe.style.setProperty('--hy', hp.y + '%'); pe.style.setProperty('--hw', hp.w + '%');
+    }
+    return pe;
+  }
+  /** The start position with the set being looked at: a board shows with your pieces, a piece set on your board. */
+  function previewBoard(slot, it) {
+    const bd = slot === 'board' ? it : find('board', S.equipped.board);
+    const w = slot === 'piece' ? (it.id ? it : RETRO) : skinOf(slotOf(false)), bl = slot === 'piece' ? w : skinOf(slotOf(true));
+    const hat = slot === 'hat' && it.id ? it : null;
+    const bdk = bd && bd.neon ? 'neon' : bd && bd.doodle ? 'doodle' : bd && (bd.wood || bd.smooth) ? 'wood' : bd && bd.tile ? 'tile' : bd && bd.flat ? 'flat' : '';
+    if (bd && bd.doodle) ensureDoodle();
+    const wrap = document.createElement('div');
+    wrap.className = 'board-wrap pv-live'; if (bdk) wrap.dataset.bd = bdk;
+    wrap.style.cssText = '--bs:176px;--light-sq:' + (bd ? bd.l : '#eeeed2') + ';--dark-sq:' + (bd ? bd.d : '#769656') + ';--light-img:' + (bd && bd.li ? bd.li : 'none') + ';--dark-img:' + (bd && bd.di ? bd.di : 'none');
+    const board = document.createElement('div'); board.className = 'board';
+    for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+      const sq = document.createElement('div'); sq.className = 'square ' + ((r + f) % 2 ? 'dark' : 'light');
+      const kind = r === 0 || r === 7 ? BACK[f] : r === 1 || r === 6 ? 'p' : '';
+      if (kind) sq.appendChild(miniPiece(kind, r < 4, r < 4 ? bl : w, hat));
+      board.appendChild(sq);
+    }
+    wrap.appendChild(board);
+    return wrap;
+  }
+  /** A background shows as a small mock-up of the app: header, two cards, a button and a board. */
+  function bgMock(it) {
+    const pic = it.custom ? customImg() : '';
+    const m = document.createElement('div');
+    m.className = 'pv-mock' + (it.anim ? ' anim-' + it.anim : '');
+    m.style.cssText = '--mb:' + (it.bg || '#1f1f1f') + ';--mp:' + (it.panel || '#2b2b2b') + ';--mp2:' + (it.panel2 || '#363636') + ';--ml:' + (it.line || '#404040') + ';--ma:' + (it.acc || '#ffffff') + (pic ? ';background-image:linear-gradient(rgba(0,0,0,.42),rgba(0,0,0,.42)),url(' + pic + ');background-size:cover;background-position:center' : '');
+    m.innerHTML = '<b class="mk-h"></b><i class="mk-c"><u></u><u></u></i><i class="mk-c"><u></u><u></u></i><span class="mk-bd"></span><s class="mk-btn"></s>' + (it.custom && !pic ? '<em>Add your own picture</em>' : '');
+    return m;
+  }
+  let hv = null;
+  function hideHover() { if (hv) { hv.remove(); hv = null; } }
+  function showHover(tile) {
+    hideHover();
+    const slot = tile.dataset.slot, id = tile.dataset.id, it = id === '' ? dflt[slot] : find(slot, id);
+    if (!it) return;
+    hv = document.createElement('div'); hv.className = 'sh-hover';
+    hv.appendChild(slot === 'bg' ? bgMock(it) : previewBoard(slot, it));
+    const cap = document.createElement('div'); cap.className = 'sh-hover-cap'; cap.textContent = it.name; hv.appendChild(cap);
+    document.body.appendChild(hv);
+    const r = tile.getBoundingClientRect(), w = hv.offsetWidth, h = hv.offsetHeight;
+    let top = r.top - h - 10; if (top < 8) top = Math.min(r.bottom + 10, innerHeight - h - 8);
+    hv.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + 'px';
+    hv.style.top = Math.max(8, top) + 'px';
+  }
+  function wireHover(tile) {
+    tile.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') showHover(tile); });
+    tile.addEventListener('pointerleave', hideHover);
+    tile.addEventListener('contextmenu', (e) => e.preventDefault());
+    let t = 0, sx = 0, sy = 0;
+    const stop = () => { clearTimeout(t); if (tile._held) { hideHover(); setTimeout(() => { tile._held = false; }, 450); } };
+    tile.addEventListener('touchstart', (e) => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; tile._held = false; clearTimeout(t); t = setTimeout(() => { tile._held = true; showHover(tile); if (navigator.vibrate) { try { navigator.vibrate(12); } catch (x) { /* ignore */ } } }, 330); }, { passive: true });
+    tile.addEventListener('touchmove', (e) => { if (Math.abs(e.touches[0].clientX - sx) + Math.abs(e.touches[0].clientY - sy) > 12) { clearTimeout(t); if (tile._held) stop(); } }, { passive: true });
+    tile.addEventListener('touchend', stop); tile.addEventListener('touchcancel', stop);
+  }
+
   const TABS = { board: 'Boards', piece: 'Pieces', hat: 'Accessories', bg: 'Backgrounds' };
   let tab = 'board';
   function renderShop() {
@@ -536,7 +620,7 @@
       const used = slot === 'board' || slot === 'bg' ? (S.equipped[slot] === it.id ? ['b'] : []) : ['p1', 'p2'].filter((w) => S.slots[w][slot] === it.id);
       const eq = used.length > 0;
       const R = isDef ? { name: 'Starter', c: '#8a8a85' } : RARITY[it.r];
-      return `<button class="sh-tile${owned ? '' : ' locked'}${eq ? ' eq' : ''}" style="--rc:${R.c}" data-slot="${slot}" data-id="${it.id}" ${owned ? '' : 'disabled'}>
+      return `<button class="sh-tile${owned ? '' : ' locked'}${eq ? ' eq' : ''}" style="--rc:${R.c}" data-slot="${slot}" data-id="${it.id}" ${owned ? '' : 'aria-disabled="true"'}>
         <span class="sh-rar">${R.name}</span>
         <span class="sh-pv">${isDef && slot === 'hat' ? '<span class="pv-none">∅</span>' : preview(slot, it)}</span>
         <span class="sh-nm">${esc(it.name)}</span>
@@ -559,7 +643,10 @@
     document.querySelectorAll('[data-tab]').forEach((b) => { b.onclick = () => { tab = b.dataset.tab; renderShop(); }; });
     document.querySelectorAll('[data-open]').forEach((b) => { b.onclick = () => openCrate(b.dataset.open); });
     document.querySelectorAll('.sh-tile').forEach((b) => {
+      wireHover(b);
       b.onclick = () => {
+        hideHover();
+        if (b._held || b.getAttribute('aria-disabled') === 'true') return;      // a press-and-hold only previews; a locked item can be previewed but not equipped
         equipFlow(b.dataset.slot, b.dataset.id);
       };
     });

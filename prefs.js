@@ -8,7 +8,7 @@
   if (!LP) return;
   const $ = (s) => document.querySelector(s);
   const KEY = 'localPieces.prefs';
-  const DEF = { sound: true, volume: 0.6, anim: true, warn: true, quick: true, shortcuts: true, light: '', dark: '', last: {} };
+  const DEF = { sound: true, volume: 0.6, anim: true, warn: true, quick: true, shortcuts: true, premove: true, light: '', dark: '', last: {} };
   let P = Object.assign({}, DEF, { last: {} });
   try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && typeof s === 'object') P = Object.assign(P, s, { last: Object.assign({}, s.last || {}) }); } catch (e) { /* ignore */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(P)); } catch (e) { /* ignore */ } };
@@ -83,6 +83,7 @@
     '<div class="set-colors"><label>Light squares <input type="color" id="pf-light" value="' + (P.light || '#eeeed2') + '"></label><label>Dark squares <input type="color" id="pf-dark" value="' + (P.dark || '#769656') + '"></label><button class="btn" id="pf-creset" type="button">Use equipped board</button></div>' +
     '<h3 class="set-h">Games</h3>' +
     row('pf-warn', 'Warn before replacing a saved game', 'When all 5 save slots are full, ask before the oldest is replaced.', P.warn) +
+    row('pf-premove', 'Premoves', 'Queue moves while it is your opponent\'s turn in Classic, Bullet, Rapid and Online. Tap anywhere else to cancel them.', P.premove) +
     row('pf-quick', 'Quick rematch', 'Show a Rematch button as soon as a game ends.', P.quick) +
     row('pf-keys', 'Keyboard shortcuts', 'N new game, R rematch, U undo, Y redo, F flip, H hint, P pause, M mute, ? help.', P.shortcuts);
   prefs.bind = () => {
@@ -92,6 +93,7 @@
     on('pf-anim', (e) => { prefs.set('anim', e.target.checked); animClass(); });
     on('pf-warn', (e) => prefs.set('warn', e.target.checked));
     on('pf-quick', (e) => prefs.set('quick', e.target.checked));
+    on('pf-premove', (e) => prefs.set('premove', e.target.checked));
     on('pf-keys', (e) => prefs.set('shortcuts', e.target.checked));
     const col = (id, k) => { const e = $('#' + id); if (e) e.oninput = () => { prefs.set(k, e.value); if (LP.applyLook) LP.applyLook(); }; };
     col('pf-light', 'light'); col('pf-dark', 'dark');
