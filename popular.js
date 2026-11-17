@@ -59,5 +59,5 @@
   function open() { render(); LP.showPage('popular'); }
   $('#pp-back').addEventListener('click', () => LP.showPage('menu'));
   document.querySelector('.mode[data-mode="popular"]').addEventListener('click', () => LP.saves.guard(open));
-  LP.popular = { list: LIST, open, done: markDone };
+  LP.popular = { list: LIST, open, done: markDone, mini };
 })();

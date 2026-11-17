@@ -82,6 +82,29 @@
   window.__aiFlags = F;
   window.__aiWeights = W;
 
+  /* Playing styles for the strong levels (Hard, Godly, Insane): the same search, a different personality.
+   * Only a few evaluation weights and how a draw is valued change; the depth and the time do not. */
+  const W0 = Object.assign({}, W);
+  const SK = { att: 1, def: 1 };            // king attack weight: attacking the enemy king (att) / our own king being attacked (def)
+  let styleCi = -1, styleDraw = 0, styleName = 'normal';
+  const STYLES = {
+    normal:     { w: {}, att: 1, def: 1, draw: 0 },
+    solid:      { w: { pawns: 1.25, mob: 0.9 }, att: 0.8, def: 1.5, draw: 8 },
+    aggressive: { w: { mob: 1.3, threat: 1.2, passed: 1.1 }, att: 1.7, def: 0.7, draw: -30 },
+    defensive:  { w: { pawns: 1.3, threat: 1.1 }, att: 0.6, def: 1.8, draw: 25 },
+  };
+  /** Set the style for the side `color` that is about to move. Any other kind of search calls this with 'normal'. */
+  function applyStyle(name, color) {
+    const st = STYLES[name] || STYLES.normal;
+    Object.keys(W0).forEach((k) => { W[k] = W0[k] * (st.w[k] || 1); });
+    SK.att = st.att; SK.def = st.def;
+    styleCi = st === STYLES.normal ? -1 : color === WHITE ? 0 : 1;
+    styleDraw = st.draw;
+    if (name !== styleName) { styleName = name; ttDepth.fill(-1); }   // stored scores were made with other weights
+  }
+  window.__aiStyles = Object.keys(STYLES);
+  window.__aiResetStyle = () => applyStyle('normal', 0);
+
   /* ------------------------------------------------------------------ evaluation */
   const wpMin = new Int8Array(10), bpMax = new Int8Array(10), wpCnt = new Int8Array(10), bpCnt = new Int8Array(10);
   const PH = [0, 0, 1, 1, 2, 4, 0];
@@ -333,7 +356,7 @@
     if (F.king) {
       for (let ci = 0; ci < 2; ci++) {
         if (kAt[ci] >= 2) {
-          const pen = Math.min(kUn[ci] * kAt[ci] * 2.5, 200) * W.king;
+          const pen = Math.min(kUn[ci] * kAt[ci] * 2.5, 200) * W.king * (styleCi < 0 ? 1 : ci === styleCi ? SK.def : SK.att);
           if (ci === 0) mg -= pen; else mg += pen;
         }
       }
@@ -487,6 +510,28 @@
     const k = killers[ply] || killers[127];
     if (k[0] === key || k[1] === key) return 9e5;
     return history[key];
+  }
+
+  /**
+   * Root only: quiet checks are tried before other quiet moves, the ones that leave the king the fewest replies first (a mate first of all).
+   * A plain check and a check that cuts off the king look the same to the history ordering, and the search can run out of time before it
+   * has tried the stronger one.
+   */
+  function rootChecks(c, moves) {
+    const out = new Map();
+    for (const m of moves) {
+      if (m.spawn) continue;
+      const loud = !!c.board[m.to] || !!m.promo || m.flags === 2;   // captures and promotions are tried early anyway: only a mating one is lifted above them
+      c.makeMove(m);
+      if (c.inCheck(c.turn)) { const n = c.legalMoves().length; if (n === 0) out.set(m, 2e7); else if (!loud) out.set(m, 9.5e5 - Math.min(n, 30) * 100); }
+      c.unmakeMove();
+    }
+    return out;
+  }
+  function rootOrder(c, moves, hashKey, chk) {
+    const sc = moves.map((m) => { let s = moveScore(c, m, 0, hashKey); const b = chk.get(m); if (b !== undefined && (s < 9.4e5 || b >= 2e7)) s = b; return { m, s }; });
+    sc.sort((a, b) => b.s - a.s);
+    return sc.map((o) => o.m);
   }
 
   function order(g, moves, ply, hashMove) {
@@ -749,7 +794,7 @@
         if (!aborted) e = qe;
         aborted = false;
       }
-      drawVal = e > 150 ? -35 : e < -150 ? 30 : 0;  // when winning, a draw is a bad result; when losing, a good one
+      drawVal = e > 150 ? -35 : e < -150 ? 30 : styleDraw;  // when winning, a draw is a bad result; when losing, a good one (a style leans one way when it is level)
       if (cfg.swindle && swindleOk(g) && e < -SWINDLE_AT) armSwindle(e);
     } else drawVal = 0;
   }
@@ -812,7 +857,7 @@
     insane:  { maxDepth: 30, time: 5000, q: 8, noise: 0,  blunder: 0, book: true, polish: true, snail: 1.2, swindle: true },   // plays book lines, then double-checks its move so it avoids labelled mistakes and goes for brilliant/best moves
     // Godly: searches 5 full moves (10 plies), keeps its 3 best moves and picks one at random 3/6, 2/6, 1/6
     godly:   { maxDepth: 14, time: 2600, q: 8, noise: 0,  blunder: 0, snail: 1.2, multi: 5, pick: 3, weights: [3, 2, 1], castle: 120, guard: true, window: 70, mate: true, swindle: true },
-    hint:    { maxDepth: 30, time: 4200, scale: 1.8, q: 10, noise: 0,  blunder: 0, multi: 3, pick: 3, swindle: true },   // Sandbox: the 3 best moves, thought about for longer than any computer level
+    hint:    { maxDepth: 30, time: 6500, scale: 1.8, q: 10, noise: 0,  blunder: 0, multi: 3, pick: 3, swindle: true },   // Sandbox: the 3 best moves, thought about for longer than any computer level
   };
   window.__aiLevels = LEVELS;
   window.__aiNodes = () => nodes;
@@ -864,11 +909,12 @@
     deadline = t0 + cfg.time;
     nodes = 0; aborted = false; lastDepth = 0;
 
+    const chk = rootChecks(c, rootMoves);
     let top = rootMoves.slice(0, K).map((m) => ({ m, sc: 0 }));
     let prevScores = new Map();
     let depth = 1;
     const sk = cfg.scale || 1;
-    let soft = 0.45 * sk, prevTop = null, prevTopScore = 0, stableCount = 0;
+    let soft = 0.45 * sk, prevTop = null, prevTopScore = 0, stableCount = 0, extended = false;
 
     if (cfg.mate && g.mode !== 'royale') {
       const fm = window.findMate(c);              // forced mate in 1 or 2 is always played
@@ -922,7 +968,7 @@
       const used = now() - t0;
       if (depth > cfg.maxDepth || (depth > 3 && used > cfg.time * soft)) { done(); return; }
       aborted = false;
-      const ordered = rootMoves.slice().sort((a, b) => (prevScores.get(b) ?? -INF) - (prevScores.get(a) ?? -INF));
+      const ordered = rootMoves.slice().sort((a, b) => (prevScores.get(b) ?? chk.get(b) ?? -INF) - (prevScores.get(a) ?? chk.get(a) ?? -INF));
       const found = [];
       let cut = -INF;                   // score of the K-th best so far
       const scoreMap = new Map();
@@ -935,8 +981,9 @@
         const gaveCheck = swindling && c.inCheck(c.turn);
         c.unmakeMove();
         if (aborted) break;
-        if (seenCount === 1) sc += swindling ? 15 : -25;   // (a position seen once before: normally avoided, welcome when playing for a draw)
-        if (gaveCheck) sc += 12;                           // checks keep a perpetual check possible
+        const nearMate = sc > MATE - 200 || sc < -MATE + 200;   // (never nudge a mate score: a pruned bound plus a bonus would beat the real mate)
+        if (seenCount === 1 && !nearMate) sc += swindling ? 15 : -25;   // (a position seen once before: normally avoided, welcome when playing for a draw)
+        if (gaveCheck && !nearMate) sc += 12;                           // checks keep a perpetual check possible
         scoreMap.set(m, sc);
         if (found.length < K || sc > cut) {
           found.push({ m, sc });
@@ -956,12 +1003,20 @@
         const same = prevTop === found[0].m, move = Math.abs(found[0].sc - prevTopScore);
         stableCount = same && move <= 20 ? stableCount + 1 : 0;
         const gap = found.length > 1 ? found[0].sc - found[1].sc : 0;
+        if (prevTopScore - found[0].sc > 90 && !extended && Math.abs(found[0].sc) < MATE - 200) { extended = true; deadline += cfg.time * 0.15; }
         if (!same || prevTopScore - found[0].sc > 35) soft = Math.min(0.95, 0.8 * sk);
         else if (depth >= 8 && gap > 300 && stableCount >= 2) soft = 0.12 * sk;
         else if (stableCount >= 3) soft = Math.min(0.9, 0.3 * sk);
         else soft = Math.min(0.85, 0.45 * sk);
         prevTop = found[0].m; prevTopScore = found[0].sc;
-      } else { prevTop = found[0].m; prevTopScore = found[0].sc; }
+      } else {
+        // the score has just collapsed between two depths (a refutation was found): give the search room to see how bad it is and look for a way out
+        if (F.tm && depth >= 4 && prevTop && prevTopScore - found[0].sc > 90 && Math.abs(found[0].sc) < MATE - 200) {
+          soft = Math.min(0.95, 0.85 * sk);
+          if (!extended) { extended = true; deadline += cfg.time * 0.15; }
+        }
+        prevTop = found[0].m; prevTopScore = found[0].sc;
+      }
       depth++;
       defer(iterate);
     };
@@ -970,6 +1025,7 @@
 
   /** The best moves for the side to move: cb([{ move, score }]) best first. */
   window.searchTop = function (g, level, color, seen, cb) {
+    applyStyle('normal', color);
     const cfg = LEVELS[level] || LEVELS.hint;
     const c = cloneForSearch(g, color === WHITE ? BLACK : WHITE);
     const all = c.legalMoves();
@@ -998,8 +1054,9 @@
    * Find the computer's move. Calls cb(move) (a move object valid in the real game `g`) when done.
    * `seen` is an optional Map of position-key -> times seen, used to avoid shuffling back and forth.
    */
-  window.searchMove = function (g, level, color, seen, cb, maxMs) {
+  window.searchMove = function (g, level, color, seen, cb, maxMs, style) {
     let cfg = LEVELS[level] || LEVELS.medium;
+    applyStyle(style && (level === 'hard' || level === 'godly' || level === 'insane') ? style : 'normal', color);
     if (maxMs && cfg.time) cfg = Object.assign({}, cfg, { time: Math.min(cfg.time, maxMs), polish: false });   // under a clock: think for less
     const enemy = color === WHITE ? BLACK : WHITE;
     const c = cloneForSearch(g, enemy);
@@ -1013,6 +1070,7 @@
         out = all.length ? all[Math.floor(Math.random() * all.length)] : null;
       }
       if (out && cfg.polish && !swindling && g.mode !== 'snail' && g.mode !== 'gamble' && g.mode !== 'royale') out = polish(g, out);   // (the move-strength labels know nothing about snails)
+      applyStyle('normal', color);       // (everything else, puzzles and analysis included, is judged without a style)
       cb(out);
     };
 
@@ -1056,6 +1114,7 @@
     lastDepth = 0;
 
     let depth = 1;
+    const chk = rootChecks(c, rootMoves);
     let best = rootMoves[0];
     let bestKey = 0;
     const fullWindow = cfg.noise > 0;
@@ -1065,7 +1124,7 @@
       const used = now() - t0;
       if (depth > cfg.maxDepth || (depth > 2 && used > cfg.time * soft)) { finish(best); return; }
       aborted = false;
-      const ordered = order(c, rootMoves, 0, bestKey);
+      const ordered = rootOrder(c, rootMoves, bestKey, chk);
       let alpha = -INF, iterBest = null, iterScore = -INF;
       for (let i = 0; i < ordered.length; i++) {
         const m = ordered[i];
@@ -1083,8 +1142,9 @@
         const gaveCheck = swindling && c.inCheck(c.turn);
         c.unmakeMove();
         if (aborted) break;
-        if (seenCount === 1) sc += swindling ? 15 : -25;   // (a position seen once before: normally avoided, welcome when playing for a draw)
-        if (gaveCheck) sc += 12;                           // checks keep a perpetual check possible
+        const nearMate = sc > MATE - 200 || sc < -MATE + 200;   // (never nudge a mate score: a pruned bound plus a bonus would beat the real mate)
+        if (seenCount === 1 && !nearMate) sc += swindling ? 15 : -25;   // (a position seen once before: normally avoided, welcome when playing for a draw)
+        if (gaveCheck && !nearMate) sc += 12;                           // checks keep a perpetual check possible
         if (cfg.noise) sc += (Math.random() - 0.5) * 2 * cfg.noise;
         if (sc > iterScore) { iterScore = sc; iterBest = m; }
         if (sc > alpha) alpha = sc;
@@ -1123,6 +1183,7 @@
     clone: (g) => cloneForSearch(g, 0),
     MATE,
     run(g, played, ms, maxDepth, q) {
+      applyStyle('normal', 0);
       const c = cloneForSearch(g, 0);
       const root = c.legalMoves();
       if (!root.length) return { depth: 0, legal: 0, top: [], played: null };
@@ -1225,6 +1286,7 @@
    * Returns [{ m, sc }] from the side to move's point of view. Stops early (returning what it has) when `ms` runs out.
    */
   window.AIScoreAll = function (g, depth, ms, q) {
+    applyStyle('normal', 0);
     const c = cloneForSearch(g, 0);
     const root = c.legalMoves();
     prepare(g, c, { q: q == null ? 2 : q });

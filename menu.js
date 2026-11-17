@@ -24,7 +24,7 @@
   LP.menuOpenAll = () => groups.forEach((g) => setOpen(g, true, false));
 
   /* ---- Suggestions ---- */
-  const GH = 'https://github.com/2jaxonstanley-mlp/Chess/issues/new';
+  const GH = 'https://github.com/2jaxonstanley-mlp/Local-pieces/issues/new';
   function sgLinks() {
     const t = $('#sg-text').value.trim();
     const body = t + '\n\n(Sent from Local Pieces)';

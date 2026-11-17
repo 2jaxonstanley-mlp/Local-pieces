@@ -1,6 +1,7 @@
 /**
- * Online: play a friend on another device. The game state lives in a Google Sheet behind a small
- * Apps Script web app (online-server.gs); this file is the menu and the network side.
+ * Online: play a friend on another device. The game state lives in a Supabase database (see the supabase-*.sql files);
+ * this file is the menu and the network side. Every call goes to one database function (api) and Supabase Realtime wakes the
+ * polling loops the moment a game changes, so a move shows on the other screen almost at once.
  *
  *   - Create a game (timed or unlimited, private code or public list), join with a code, or pick an open game.
  *   - Each player's browser checks every move it receives, so the server never needs to know the rules.
@@ -15,26 +16,85 @@
   'use strict';
   const LP = window.LP;
   const $ = (q) => document.querySelector(q);
-  const IDLE_MS = 30000;
-  const POLL_MS = 100;     // gap between polls (the server holds each one open until there is news)
+  const IDLE_MS = 45000;
+  const POLL_MS = 100;     // gap between polls (a poll waits for Realtime news, or 4 seconds, before it answers)
+  const HOLD_MS = 4000;
   const TIMES = [[60, 0, '1 minute'], [180, 1, '3 minutes + 1'], [300, 0, '5 minutes'], [600, 0, '10 minutes']];
   const esc = (t) => LP.esc(String(t == null ? '' : t));
-  const url = () => (window.ONLINE_URL || '').trim();
   const rnd = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => (b % 36).toString(36)).join('');
   const label = (mode, base, inc) => (mode === 'timed' ? (base % 60 === 0 ? base / 60 + ' min' : base + ' s') + (inc ? ' + ' + inc : '') : 'Unlimited');
 
-  /* ---------------------------------------------------------------- network */
+  /* ---------------------------------------------------------------- network (Supabase) */
   const chains = {};   // writes go one after another per lane: puzzle scores never wait behind a puzzle upload
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  function rawPost(body) {
-    return fetch(url(), { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) }).then((r) => r.json());
+  const SB_KEY = () => (window.SUPABASE_ANON_KEY || '').trim();
+  const url = () => ((window.SUPABASE_URL || '').trim() && SB_KEY() ? (window.SUPABASE_URL || '').trim().replace(/\/+$/, '') : '');
+  let sb = null;
+  /** The Supabase client (made once). Null if the settings are empty or the library did not load. */
+  function client() {
+    if (sb) return sb;
+    if (!url() || !window.supabase || !window.supabase.createClient) return null;
+    sb = window.supabase.createClient(url(), SB_KEY(), { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }, realtime: { params: { eventsPerSecond: 20 } } });
+    return sb;
   }
-  function rawGet(params) {
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), 20000);   // a hung request must not stop the polling
-    return fetch(url() + (url().includes('?') ? '&' : '?') + new URLSearchParams(Object.assign({ _: Date.now() }, params)), { signal: ctl.signal })
-      .then((r) => r.json()).finally(() => clearTimeout(t));
+  /** A secret key that proves this device owns its player id (sent with every request that names the player). */
+  const ptk = (() => {
+    let k = '';
+    try { k = localStorage.getItem('localPieces.ptk') || ''; } catch (e) { k = ''; }
+    if (k.length < 24) { k = rnd() + rnd(); try { localStorage.setItem('localPieces.ptk', k); } catch (e) { /* ignore */ } }
+    return k;
+  })();
+  function rpc(body) {
+    const c = client();
+    if (!c) return Promise.reject(new Error('Supabase is not ready'));
+    const payload = body && body.pid ? Object.assign({ ptk }, body) : body;
+    const call = c.rpc('api', { p: payload }).then((r) => { if (r.error) throw new Error(r.error.message || 'request failed'); return r.data; });
+    return Promise.race([call, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 20000))]);   // a hung request must not stop the polling
   }
+  const rawPost = (body) => rpc(body);
+
+  /* Realtime: one channel per game being watched. A change wakes the poll that is waiting on it. */
+  const watchers = {};
+  function watch(table, id) {
+    const key = table + ':' + id;
+    let w = watchers[key];
+    if (!w) {
+      w = watchers[key] = { ver: 0, waiters: new Set(), t: 0, ch: null };
+      const c = client();
+      if (c) {
+        try {
+          w.ch = c.channel('lp-' + key + '-' + rnd().slice(0, 4)).on('postgres_changes', { event: '*', schema: 'public', table, filter: 'id=eq.' + id }, () => { w.ver++; Array.from(w.waiters).forEach((f) => f(true)); }).subscribe();
+        } catch (e) { w.ch = null; }
+      }
+    }
+    w.t = Date.now();
+    return w;
+  }
+  setInterval(() => {   // a channel nobody has asked about for 30 seconds is closed
+    Object.keys(watchers).forEach((k) => {
+      const w = watchers[k];
+      if (w.waiters.size || Date.now() - w.t < 30000) return;
+      try { if (w.ch && client()) client().removeChannel(w.ch); } catch (e) { /* ignore */ }
+      delete watchers[k];
+    });
+  }, 15000);
+  const news = (w, ver, ms) => new Promise((res) => {   // resolves true when Realtime reports a change, false after ms
+    if (w.ver !== ver) { res(true); return; }
+    const f = (hit) => { clearTimeout(tm); w.waiters.delete(f); res(hit === true); };
+    const tm = setTimeout(f, ms);
+    w.waiters.add(f);
+  });
+  /** A "held" poll: if nothing has changed since the stamp the caller has (u), wait for news instead of answering at once. */
+  async function heldGet(params) {
+    if ((params.a !== 'poll' && params.a !== 'spec') || !params.wait || !params.id) return rpc(params);
+    const w = watch(params.a === 'spec' && params.k === 'bot' ? 'bot_games' : 'games', String(params.id));
+    const ver = w.ver;
+    const r = await rpc(params);
+    if (!r || r.error || !params.u || String(r.upd) !== String(params.u)) return r;
+    return (await news(w, ver, HOLD_MS)) ? rpc(params) : r;
+  }
+  const rawGet = (params) => heldGet(params);
+
   /** Writes go one after another (a move must reach the server before the result), and are retried if the connection drops. */
   function post(body, tries, lane) {
     const run = async () => {
@@ -64,6 +124,20 @@
     net = null; wait = null;
   }
 
+  /* ------------------------------------------------------------------- who I am to the other player */
+  /** Elo mode of a game: Classic (no clock), Bullet (1 and 3 minute games), Rapid (5 and 10 minute games). */
+  const catOf = (mode, base) => (mode !== 'timed' ? 'basic' : base <= 180 ? 'bullet' : 'rapid');
+  /** My card sent with create / join / rematch: id, my rating in every mode and a tiny picture. */
+  async function myInfo() {
+    const P = LP.profile, Gl = LP.global;
+    let pfs = '';
+    try { pfs = Gl && Gl.thumbSmall && P && P.pfp ? await Gl.thumbSmall(P.pfp()) : ''; } catch (e) { pfs = ''; }
+    const elo = {};
+    if (P) Object.keys(P.MODES).forEach((m) => { elo[m] = P.elo(m); });
+    return { pid: Gl && Gl.pid ? Gl.pid() : '', elo, pfs };
+  }
+  const avOf = (src, name) => (src ? `<span class="gl-av" style="background-image:url(${src})"></span>` : `<span class="gl-av">${esc((name || '?').charAt(0).toUpperCase())}</span>`);
+
   /* ------------------------------------------------------------------- menu */
   function profileName(cb) {
     const nm = LP.profile && LP.profile.name();
@@ -81,7 +155,7 @@
   function mainSheet() {
     if (!url()) {
       LP.openSheet(`<h2>Online is not set up yet<span class="sub">The server address is missing.</span></h2>
-        <p class="note">Paste your Google Apps Script web app URL into online-config.js, then upload it again.</p>
+        <p class="note">Paste your Supabase Project URL and anon key into supabase-config.js, then upload it again.</p>
         <button class="btn wide" id="on-x">Close</button>`, true);
       $('#on-x').onclick = LP.closeSheet;
       return;
@@ -140,7 +214,7 @@
   async function create(cfg) {
     const tok = rnd();
     LP.openSheet('<h2>Creating game…</h2>');
-    const r = await post({ a: 'create', mode: cfg.mode, base: cfg.base, inc: cfg.inc, pub: cfg.pub, side: 'r', name: LP.profile.name(), tok }, 2);
+    const r = await post({ a: 'create', mode: cfg.mode, base: cfg.base, inc: cfg.inc, pub: cfg.pub, side: 'r', name: LP.profile.name(), tok, info: await myInfo() }, 2);
     if (!r || !r.id) { failSheet(r && r.error); return; }
     waitSheet(r.id, tok, cfg, false);
   }
@@ -188,7 +262,7 @@
   async function joinGame(id, tok) {
     tok = tok || rnd();
     LP.openSheet('<h2>Joining…</h2>');
-    const s = await post({ a: 'join', id, tok, name: LP.profile.name() }, 2);
+    const s = await post({ a: 'join', id, tok, name: LP.profile.name(), info: await myInfo() }, 2);
     if (!s || s.error || !s.you) { joinSheet(s && s.error ? s.error : 'Could not join that game.'); return; }
     begin(id, tok, s);
   }
@@ -199,7 +273,7 @@
     if (!r || !r.games) { failSheet(r && r.error, mainSheet); return; }
     LP.openSheet(`<h2>Open games<span class="sub">${r.games.length ? 'Tap one to join.' : 'Nobody is waiting right now.'}</span></h2>
       <div class="stack">
-        ${r.games.map((g) => `<button class="btn big" data-id="${esc(g.id)}"><b>${esc(g.name)}</b><small>${esc(label(g.mode, g.base, g.inc))}</small></button>`).join('')}
+        ${r.games.map((g) => `<button class="btn big ol-game" data-id="${esc(g.id)}">${avOf(g.pfs, g.name)}<span class="ol-gt"><b>${esc(g.name)}</b><small>${esc(label(g.mode, g.base, g.inc))}</small></span><span class="ol-elo">${g.elo || 'new'}<small>Elo</small></span></button>`).join('')}
         <div class="row"><button class="btn" id="l-b">Back</button><button class="btn" id="l-r">Refresh</button></div>
       </div>`, true);
     document.querySelectorAll('[data-id]').forEach((b) => { b.onclick = () => joinGame(b.dataset.id); });
@@ -211,8 +285,9 @@
   function begin(id, tok, s) {
     if (net && net.id === id) return;   // this game is already running: never start it a second time
     stopAll();
-    net = { id, tok, me: s.you, n: 0, timer: 0, drawShown: false, offered: false, rematchShown: false, over: false, busy: false, overPolls: 0 };
-    LP.chessOnline.start({ id, me: s.you, names: s.names, base: s.mode === 'timed' ? s.base : 0, inc: s.inc });
+    net = { id, tok, me: s.you, n: 0, timer: 0, drawShown: false, offered: false, rematchShown: false, over: false, busy: false, overPolls: 0, ud: s.ud || 0, undoAsked: false, undoShown: -1, rxShown: '' };
+    const cat = catOf(s.mode, s.base);
+    LP.chessOnline.start({ id, me: s.you, names: s.names, base: s.mode === 'timed' ? s.base : 0, inc: s.inc, cat, opp: s.opp ? { elo: (s.opp.elo || {})[cat] || 0, pfs: s.opp.pfs || '' } : null });
     // moves already on the server (a game joined late) are applied straight away
     onState(s, 0);
     schedule();
@@ -235,6 +310,7 @@
     my.busy = false;
     if (net !== my) return;
     if (s && !s.error) { if (s.upd) my.u = s.upd; onState(s, since); }
+    else if (LP.chessOnline.presence) LP.chessOnline.presence(-1);    // our own connection is failing
     schedule(s && s.error ? 1500 : POLL_MS);
   }
 
@@ -244,6 +320,12 @@
     const co = LP.chessOnline;
     const st = co.state();
     if (!st.active) return;
+    // a take-back that was agreed: both screens go back the same number of moves
+    if ((s.ud || 0) > net.ud) {
+      net.ud = s.ud; net.undoAsked = false;
+      while (net.n > s.n && co.undo()) net.n--;
+      co.toast('Move taken back');
+    }
     // moves from the other player
     if (s.moves && s.moves.length && st.phase === 'play') {
       let got = 0;
@@ -256,6 +338,20 @@
     }
     if (s.result && co.state().phase === 'play') { net.over = true; co.remoteEnd(s.result, s.reason); }
     if (s.status === 'over') net.over = true;
+    // take-back requests
+    const u = s.undo;
+    if (u && u.st === 'ask' && u.by !== net.me && net.undoShown !== u.n && co.state().phase === 'play') {
+      net.undoShown = u.n;
+      LP.openSheet(`<h2>Take back a move?<span class="sub">Your opponent asks to undo their last move.</span></h2>
+        <div class="row"><button class="btn" id="u-no">Decline</button><button class="btn primary" id="u-yes">Accept</button></div>`);
+      $('#u-yes').onclick = () => { LP.closeSheet(); post({ a: 'answerundo', id: net.id, tok: net.tok, accept: 1 }); };
+      $('#u-no').onclick = () => { LP.closeSheet(); post({ a: 'answerundo', id: net.id, tok: net.tok, accept: 0 }); };
+    }
+    if (u && u.st === 'no' && net.undoAsked) { net.undoAsked = false; co.toast('Take-back declined'); }
+    if ((!u || u.st !== 'ask') && $('#u-yes')) LP.closeSheet();   // the request went away (a move was played): close its sheet
+    // the other player's connection, and their reaction after the game
+    if (co.presence) co.presence(s.oppAgo || 0);
+    if (s.rx && s.rx !== net.rxShown) { net.rxShown = s.rx; co.reacted(s.rx, false); }
     // draw offers
     if (s.draw && s.draw !== net.me && !net.drawShown && co.state().phase === 'play') {
       net.drawShown = true;
@@ -295,7 +391,7 @@
     my.rmBusy = true;
     LP.openSheet('<h2>Rematch…</h2>');
     const t0 = Date.now();
-    const r = await post({ a: 'rematch', id: my.id, tok: my.tok }, 2);
+    const r = await post({ a: 'rematch', id: my.id, tok: my.tok, info: await myInfo() }, 2);
     my.rmBusy = false;
     if (net !== my) return;
     if (!r || r.error || !r.id) { LP.closeSheet(); LP.chessOnline.toast((r && r.error) || 'Could not ask for a rematch'); return; }
@@ -311,10 +407,10 @@
   /** The rematch countdown, shared with Puzzle Battle. o: { id, tok, at (server time), off (server minus this device), mine, go(state), gone(iDeclined) } */
   function countdown(o) {
     let stop = false, s0 = null, mine = false, busy = false, timer = 0;
-    LP.openSheet(`<div class="rm-count"><small>Rematch</small><b id="rm-n">3</b><span id="rm-s">Colours swap. Starting together.</span></div>
+    LP.openSheet(`<div class="rm-count"><small>${esc(o.title || 'Rematch')}</small><b id="rm-n">3</b><span id="rm-s">${esc(o.sub || 'Colours swap. Starting together.')}</span></div>
       <button class="btn wide" id="rm-x">${o.mine ? 'Cancel' : 'Decline'}</button>`, false);
     const end = () => { stop = true; clearInterval(timer); };
-    const cancelled = () => { end(); LP.closeSheet(); if (!mine) LP.chessOnline.toast('Your opponent declined the rematch'); if (o.gone) o.gone(mine); };
+    const cancelled = () => { end(); LP.closeSheet(); if (!mine) LP.chessOnline.toast('Your opponent declined the ' + (o.what || 'rematch')); if (o.gone) o.gone(mine); };
     $('#rm-x').onclick = () => { mine = true; end(); post({ a: 'decline', id: o.id, tok: o.tok }, 2); LP.closeSheet(); if (o.gone) o.gone(true); };
     (async () => {   // watch the new game: it gives us our state, and tells us at once if the other player declines
       let u = '';
@@ -332,7 +428,7 @@
       n.textContent = '…';
       if (s0 && s0.status === 'active' && s0.you && s0.ack) { end(); o.go(s0); return; }   // both of us have the game open: go
       if (t) t.textContent = 'Waiting for your opponent…';
-      if (left < -9000) { end(); post({ a: 'decline', id: o.id, tok: o.tok }, 1); LP.closeSheet(); LP.chessOnline.toast('Your opponent did not join the rematch'); if (o.gone) o.gone(true); return; }
+      if (left < -9000) { end(); post({ a: 'decline', id: o.id, tok: o.tok }, 1); LP.closeSheet(); LP.chessOnline.toast('Your opponent did not join the ' + (o.what || 'rematch')); if (o.gone) o.gone(true); return; }
       if (!busy) { busy = true; const s = await get({ a: 'poll', id: o.id, tok: o.tok, since: 0, pn: 0 }); busy = false; if (s && !s.error && !stop) s0 = s; }
     }, 100);
   }
@@ -352,6 +448,15 @@
       const reason = type === 'time' ? 'timeout' : type;
       post({ a: 'end', id: net.id, tok: net.tok, result, reason }, 6);
     },
+    askUndo() {
+      if (!net) return;
+      net.undoAsked = true;
+      post({ a: 'askundo', id: net.id, tok: net.tok }).then((r) => { if (r && r.error && net) { net.undoAsked = false; LP.chessOnline.toast(r.error); } else if (net) LP.chessOnline.toast('Take-back requested'); });
+    },
+    react(code) {
+      if (!net) return;
+      post({ a: 'react', id: net.id, tok: net.tok, code: String(code) }, 2);
+    },
     offerDraw() {
       if (!net) return;
       net.offered = true;
@@ -359,11 +464,13 @@
       LP.chessOnline.toast('Draw offered');
     },
     rematch,
+    begin,
+    active() { return !!net && !net.over; },
     leave() { if (net) { clearTimeout(net.timer); net = null; } },
   };
 
   /** The network helpers are shared with Puzzle Battle and the global leaderboard. */
-  LP.onlineApi = { get, post, rawGet, rawPost, rnd, url, sleep, countdown };
+  LP.onlineApi = { get, post, rawGet, rawPost, client, rnd, url, sleep, countdown, TIMES, label, myInfo, profileName, catOf };
 
   const card = document.querySelector('.mode[data-mode="online"]');
   if (card) card.addEventListener('click', mainSheet);

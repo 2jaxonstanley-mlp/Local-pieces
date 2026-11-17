@@ -16,9 +16,10 @@
   const LIVES = 3;
   const TYPEKEY = 'localPieces.rushType', BESTKEY = 'localPieces.rushBest', MODEKEY = 'localPieces.rushMode';
   const MODES = { 3: '3 min', 5: '5 min', s: 'Survival' };      // Puzzle Rush modes: two timed, one with no timer
-  const BOARD_OF = { 3: 'rush3', 5: 'rush5', s: 'rush' };      // Global Leaderboard board for each mode
+  const BOARD_OF = { 3: 'rushavg', 5: 'rushavg', s: 'rushavg' };      // the Global Leaderboard has one Rush board: the average of the three modes
   const MATEIN = { easy: [1, 2], normal: [1, 2, 3], hard: [2, 3, 4, 5], insane: [2, 3, 4, 5, 6, 7, 8] };
-  const TYPES = ['mate', 'mate', 'check', 'best', 'sac', 'fork', 'fork'];
+  const TYPES = ['mate', 'mate', 'check', 'best', 'sac', 'fork', 'fork', 'pin', 'skewer', 'hanging', 'trapped', 'backrank', 'scholar', 'underpromo', 'endgame'];
+  const NAMES = { pin: 'Pin', skewer: 'Skewer', hanging: 'Hanging piece', trapped: 'Trapped piece', backrank: 'Back-rank mate', scholar: 'Scholar\'s mate', underpromo: 'Under-promotion', endgame: 'Endgame' };
 
   const readJ = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } };
   const writeJ = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* ignore */ } };
@@ -41,7 +42,7 @@
   /** A puzzle's rating, used for "Highest Solved". */
   function ratingOf(p) {
     const base = { easy: 500, normal: 1000, hard: 1600, insane: 2200 }[p.diff || 'normal'] || 1000;
-    const t = p.type === 'mate' ? ((p.n || 1) - 1) * 120 : p.type === 'sac' ? 150 : p.type === 'fork' ? 80 : p.type === 'best' ? 50 : 0;
+    const t = p.type === 'mate' ? ((p.n || 1) - 1) * 120 : p.type === 'sac' ? 150 : p.type === 'fork' ? 80 : p.type === 'best' ? 50 : ({ pin: 90, skewer: 90, trapped: 100, underpromo: 130, backrank: 60, endgame: 100, hanging: 30, scholar: 0 }[p.type] || 0);
     return Math.min(3200, base + t);
   }
   function slim(p) { const q = Object.assign({}, p); delete q.explain; q.rt = ratingOf(q); return q; }
@@ -68,7 +69,7 @@
   const mmss = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
   const myName = () => (LP.profile && LP.profile.name && LP.profile.name()) || 'You';
 
-  const typeLabel = (p) => (!p ? '' : p.type === 'mate' ? 'Mate in ' + (p.n || 1) : p.type === 'check' ? 'Checks only' : p.type === 'best' ? 'Best move' : p.type === 'fork' ? ({ royal: 'Royal fork', knight: 'Knight fork', pawn: 'Pawn fork', bishop: 'Bishop fork', rook: 'Rook fork', queen: 'Queen fork' }[p.kind] || 'Fork') : 'Sacrifice');
+  const typeLabel = (p) => (!p ? '' : p.type === 'mate' ? 'Mate in ' + (p.n || 1) : p.type === 'check' ? 'Checks only' : p.type === 'best' ? 'Best move' : p.type === 'fork' ? ({ royal: 'Royal fork', knight: 'Knight fork', pawn: 'Pawn fork', bishop: 'Bishop fork', rook: 'Rook fork', queen: 'Queen fork' }[p.kind] || 'Fork') : NAMES[p.type] || 'Sacrifice');
   function bar() {
     const top = $('#pr-bar'), foot = $('#pr-foot'), r = run;
     if (!top || !foot) return;
@@ -108,9 +109,10 @@
 
   const hooks = {
     get hideType() { return !!(run && run.hideType); },
-    onSolved() {
+    onSolved(first) {
       const r = run;
       if (!r || r.over || r.timeUp) return;
+      if (r.rs) r.rs.push([1, first ? { f: first.f, t: first.t, p: first.p || 0 } : {}]);   // the server counts the score from these results
       r.score++; r.streak++; r.longest = Math.max(r.longest, r.streak);
       if (r.cur) r.hs = Math.max(r.hs, r.cur.rt || 0);
       r.times.push((Date.now() - r.curT) / 1000);
@@ -122,6 +124,7 @@
       const r = run;
       if (!r || r.over || r.timeUp) return;
       r.lives = Math.max(0, r.lives - 1); r.streak = 0;
+      if (r.rs) r.rs.push([0]);
       bar();
       if (r.mode === 'battle') send(r);
     },
@@ -241,6 +244,7 @@
       $('#re-t').textContent = k ? rank(k.today) : '–'; $('#re-w').textContent = k ? rank(k.week) : '–';
       $('#re-a').textContent = k ? rank(k.all) : '–'; $('#re-g').textContent = k ? rank(k.all) : '–';
     };
+    if (r.score > 0 && LP.rewards && r.mode !== 'battle') { try { LP.rewards.event('rushpts', r.score); } catch (e) { /* ignore */ } }
     if (r.score > 0 && LP.global) LP.global.submitRush(r.score, r.hs, r.rmode).then(fill, () => fill(null)); else fill(null);
     if (LP.global) LP.global.syncStats();
   }
@@ -266,7 +270,7 @@
     $('#pr-go').onclick = () => beginSolo(mode);
     $('#pr-lbb').onclick = () => { LP.closeSheet(); if (LP.global) LP.global.show(BOARD_OF[mode]); };
   }
-  const typeOpt = () => `<label class="pr-opt"><input type="checkbox" id="pr-show"${showType() ? ' checked' : ''}><span><b>Show the puzzle type</b><small>Mate, check, best move, sacrifice or fork. Turn it off for a harder run.</small></span></label>`;
+  const typeOpt = () => `<label class="pr-opt"><input type="checkbox" id="pr-show"${showType() ? ' checked' : ''}><span><b>Show the puzzle type</b><small>Mate, check, best move, sacrifice, fork, pin, skewer and more. Turn it off for a harder run.</small></span></label>`;
   function wireOpt() { const c = $('#pr-show'); if (c) c.onchange = () => writeJ(TYPEKEY, c.checked); }
 
   /* ------------------------------------------------------------ Puzzle Battle (online) */
@@ -285,7 +289,7 @@
   function battleSheet() {
     if (!N() || !N().url()) {
       LP.openSheet(`<h2>Online is not set up yet<span class="sub">The server address is missing.</span></h2>
-        <p class="note">Paste your Google Apps Script web app URL into online-config.js, then upload it again.</p><button class="btn wide" id="pb-x">Close</button>`, true);
+        <p class="note">Paste your Supabase Project URL and anon key into supabase-config.js, then upload it again.</p><button class="btn wide" id="pb-x">Close</button>`, true);
       $('#pb-x').onclick = LP.closeSheet;
       return;
     }
@@ -388,7 +392,7 @@
     const pb = s.pb;
     const r = run = newRun('battle', {
       id, tok, role: pb.role, pz: [], i: 0, full: false, start: pb.start, len: pb.len || 180000, off: s.now ? s.now - Date.now() : 0, offSet: false,
-      opp: { s: 0, l: LIVES, hp: 0 }, oppName: pb.role === 'h' ? pb.guestName : pb.hostName, u: '', started: false, timeUp: false, out: false, overPolls: 0, t0: 0,
+      rs: [], acked: 0, lastSend: 0, opp: { s: 0, l: LIVES, hp: 0 }, oppName: pb.role === 'h' ? pb.guestName : pb.hostName, u: '', started: false, timeUp: false, out: false, overPolls: 0, t0: 0,
     });
     Puz.rushStart(hooks, 'Puzzle Battle');
     syncTitle();
@@ -416,6 +420,7 @@
       serve(r);
     }
     if (r.over) return;
+    if (r.rs && r.rs.length > r.acked && Date.now() - r.lastSend > 2500) send(r);   // the server has not counted every result yet: send again
     const t = $('#pr-time');
     if (t) { t.textContent = mmss(rem); t.classList.toggle('low', rem < 30000); }
     if (rem <= 0 && !r.timeUp) timeUp(r);
@@ -433,27 +438,14 @@
     }
   }
 
-  function send(r) { N().post({ a: 'pscore', id: r.id, tok: r.tok, s: r.score, l: r.lives, hp: r.hs }, 3, 'score'); }   // its own lane: never waits behind a puzzle upload
-
-  /** Whoever needs the next puzzle first makes it and sends it; the other one downloads it, so both always get the same ones. */
-  function battleFill(r) {
-    if (run !== r || r.over || r.gen || r.full || r.pz.length >= r.i + 3) return;
-    const k = r.pz.length;
-    r.gen = true;
-    const sp = plan(k);
-    PG.make(sp.type, sp.diff, async (p) => {
-      r.gen = false;
-      if (run !== r || r.over) return;
-      if (r.pz.length !== k) { battleFill(r); return; }       // the other player's puzzle got there first
-      p = slim(p);
-      const res = await N().post({ a: 'pput', id: r.id, tok: r.tok, k, data: p }, 2, 'puzzle');
-      if (run !== r) return;
-      if (res && res.ok && r.pz.length === k) r.pz.push(p);
-      else if (res && res.full) r.full = true;
-      if (r.waiting) serve(r);
-      battleFill(r);
-    }, sp.n);
+  /** Sends every result so far (the server counts the ones it has not counted yet), in its own lane: never waits behind a puzzle upload. */
+  function send(r) {
+    r.lastSend = Date.now();
+    N().post({ a: 'pscore', id: r.id, tok: r.tok, rs: r.rs }, 3, 'score').then((res) => { if (res && typeof res.n === 'number') r.acked = Math.max(r.acked || 0, res.n); });
   }
+
+  /** Battle puzzles come from the server (it picks them when the battle is created), so there is nothing to make or send: the poll brings them. */
+  function battleFill() { /* nothing */ }
 
   async function pollLoop(r) {
     while (run === r && !r.stop) {
@@ -543,5 +535,5 @@
   const c1 = document.querySelector('.mode[data-mode="puzzlerush"]'), c2 = document.querySelector('.mode[data-mode="pbattle"]');
   if (c1) c1.addEventListener('click', soloSheet);
   if (c2) c2.addEventListener('click', battleSheet);
-  LP.puzzleRush = { plan, ratingOf, slim };
+  LP.puzzleRush = { plan, ratingOf, slim, begin, active: () => !!(run && run.mode === 'battle' && !run.over && !run.timeUp && !run.out) };
 })();

@@ -18,6 +18,16 @@
   let brush = 'P';                         // piece letter to place, or 'x' for the eraser
   let flipped = false;
   let built = false;
+  // creating a community puzzle: the same editor with a title, a category, Test and Publish
+  const DRAFT = 'localPieces.communityDraft';
+  let creating = false, moveSel = -1, title = '', cat = 'mate1', vhash = '';
+  const cats = () => (LP.community && LP.community.cats) || [{ id: 'other', label: 'Win', n: 0 }];
+  const catOf = (id) => cats().find((c) => c.id === id) || cats()[0];
+  /** Identifies exactly what was solved: the position (with side to move) and the category. Any change makes it a different puzzle. */
+  const hashOf = () => { const t = toFen() + '|' + cat; let h = 5381; for (let i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0; return h.toString(36) + t.length; };
+  const verified = () => !!vhash && vhash === hashOf();
+  const saveDraft = () => { try { localStorage.setItem(DRAFT, JSON.stringify({ fen: toFen(), title, cat, v: vhash })); } catch (e) { /* ignore */ } };
+  const loadDraft = () => { try { return JSON.parse(localStorage.getItem(DRAFT)) || null; } catch (e) { return null; } };
 
   const readSaved = () => { try { const l = JSON.parse(localStorage.getItem(KEY)); return Array.isArray(l) ? l : []; } catch (e) { return []; } };
   const writeSaved = (l) => { try { localStorage.setItem(KEY, JSON.stringify(l.slice(0, MAXP))); return true; } catch (e) { return false; } };
@@ -68,7 +78,8 @@
     for (let i = 0; i < 64; i++) {
       const r = flipped ? Math.floor(i / 8) : 7 - Math.floor(i / 8), f = flipped ? 7 - (i % 8) : i % 8;
       const el = document.createElement('div');
-      el.className = 'square ' + ((f + r) % 2 === 1 ? 'light' : 'dark');
+      el.className = 'square ' + ((f + r) % 2 === 1 ? 'light' : 'dark') + (moveSel === r * 8 + f ? ' ed-sel' : '');
+      el.dataset.sq = r * 8 + f;
       const last = flipped ? 7 : 0;
       if (r === last) { const c = document.createElement('span'); c.className = 'coord file'; c.textContent = 'abcdefgh'[f]; el.appendChild(c); }
       if (f === (flipped ? 7 : 0)) { const c = document.createElement('span'); c.className = 'coord rank'; c.textContent = r + 1; el.appendChild(c); }
@@ -81,8 +92,9 @@
   function drawPalette() {
     const pal = $('#ed-pal');
     const btn = (letter, glyph, cls) => `<button class="ed-pc${brush === letter ? ' on' : ''}" data-l="${letter}" aria-label="${letter === 'x' ? 'Eraser' : (cls === 'w' ? 'White ' : 'Black ') + glyph}"><span class="piece ${cls}">${letter === 'x' ? '✕' : GLYPH[letter.toLowerCase()]}</span></button>`;
-    pal.innerHTML = '<div class="ed-prow">' + ORDER.map((t) => btn(t.toUpperCase(), t, 'w')).join('') + '</div><div class="ed-prow">' + ORDER.map((t) => btn(t, t, 'b')).join('') + '</div><div class="ed-prow"><button class="ed-pc ed-erase' + (brush === 'x' ? ' on' : '') + '" data-l="x">Eraser</button></div>';
-    pal.querySelectorAll('.ed-pc').forEach((b) => { b.onclick = () => { brush = b.dataset.l; drawPalette(); }; });
+    pal.innerHTML = '<div class="ed-prow">' + ORDER.map((t) => btn(t.toUpperCase(), t, 'w')).join('') + '</div><div class="ed-prow">' + ORDER.map((t) => btn(t, t, 'b')).join('') + '</div><div class="ed-prow"><button class="ed-pc ed-erase' + (brush === 'm' ? ' on' : '') + '" data-l="m" aria-label="Move pieces">&#10021; Move</button><button class="ed-pc ed-erase' + (brush === 'x' ? ' on' : '') + '" data-l="x">Eraser</button></div>';
+    pal.querySelectorAll('.ed-pc').forEach((b) => { b.onclick = () => { brush = b.dataset.l; moveSel = -1; drawPalette(); drawBoard(); }; });
+    const bd = $('#ed-board'); if (bd) bd.classList.toggle('ed-move', brush === 'm');
   }
   function drawInfo() {
     const pr = problems();
@@ -94,10 +106,28 @@
     $('#ed-black').classList.toggle('on', turn === 'b');
     ['K', 'Q', 'k', 'q'].forEach((c) => { $('#ed-c' + c).checked = castle[c]; });
     $('#ed-fen').value = toFen();
+    if (creating) drawCreate(pr);
+  }
+  function drawCreate(pr) {
+    const ok = verified(), box = $('#ed-ver');
+    box.className = 'ed-ver ' + (ok ? 'ok' : 'no');
+    box.innerHTML = ok ? '<b>Verified &#10003;</b> You solved it against the Insane computer.' : '<b>Not verified</b> Press Test and solve it (as the side to move) to unlock Publish. Any change to the position or category needs a new test.';
+    $('#ed-test').disabled = pr.length > 0;
+    $('#ed-pub').disabled = !ok || pr.length > 0 || !title.trim();
+    saveDraft();
   }
   const redraw = () => { drawBoard(); drawInfo(); };
 
+  /** Move tool: tap a piece, then tap where it should go (or drag it). Tapping another piece picks that one instead. */
+  function moveTap(i) {
+    if (moveSel < 0) { if (cells[i]) moveSel = i; }
+    else if (moveSel === i) moveSel = -1;
+    else if (cells[i]) moveSel = i;
+    else { cells[i] = cells[moveSel]; cells[moveSel] = ''; moveSel = -1; }
+    redraw();
+  }
   function put(i) {
+    if (brush === 'm') { moveTap(i); return; }
     const r = Math.floor(i / 8), f = i % 8;
     if (brush === 'x') cells[r * 8 + f] = '';
     else cells[r * 8 + f] = cells[r * 8 + f] === brush ? '' : brush;
@@ -240,13 +270,19 @@
     sec.id = 'editor'; sec.className = 'page';
     sec.innerHTML = `<header class="game-header">
         <button id="ed-back" class="text-btn" aria-label="Back to menu">&larr; Menu</button>
-        <span class="pz-head"><span class="mode-title">Position editor</span></span>
+        <span class="pz-head"><span class="mode-title" id="ed-ttl">Position editor</span></span>
         <span class="header-spacer"></span>
       </header>
       <div class="layout"><div class="board-col">
         <div class="board-wrap"><div id="ed-board" class="board"></div><div id="ed-toast" class="toast" role="status"></div></div>
         <div id="ed-pal" class="ed-pal"></div>
       </div><div class="panel ed-panel">
+        <div id="ed-cr" class="ed-cr hidden">
+          <input id="ed-title" class="text-in" maxlength="28" placeholder="Puzzle title" autocomplete="off" aria-label="Puzzle title">
+          <label class="ed-cl"><span>Category</span><select id="ed-cat" class="text-in"></select></label>
+          <div id="ed-ver" class="ed-ver"></div>
+          <div class="controls ed-go"><button class="btn" id="ed-test">Test</button><button class="btn primary" id="ed-pub">Publish</button></div>
+        </div>
         <div id="ed-msg" class="ed-msg"></div>
         <div class="ed-row"><span class="ed-l">To move</span><button class="btn seg" id="ed-white">White</button><button class="btn seg" id="ed-black">Black</button></div>
         <div class="ed-row ed-cast"><span class="ed-l">Castling</span>
@@ -255,11 +291,16 @@
         <div class="controls ed-tools"><button class="btn" id="ed-clear">Clear</button><button class="btn" id="ed-start">Start position</button><button class="btn" id="ed-flip">Flip</button></div>
         <div class="ed-row"><input id="ed-fen" class="text-in ed-fen" readonly aria-label="FEN code"></div>
         <div class="controls ed-tools"><button class="btn" id="ed-import">Import</button><button class="btn" id="ed-export">Export</button><button class="btn" id="ed-save">Save</button><button class="btn" id="ed-load">Saved</button></div>
-        <div class="controls ed-go"><button class="btn primary" id="ed-play1">Play the computer</button><button class="btn primary" id="ed-play2">Play 2 players</button></div>
-        <p class="note">Position games are for fun: they never change your Elo, leaderboard or rewards. You play White against the computer.</p>
+        <div class="controls ed-go ed-playrow"><button class="btn primary" id="ed-play1">Play the computer</button><button class="btn primary" id="ed-play2">Play 2 players</button></div>
+        <p class="note ed-fun">Position games are for fun: they never change your Elo, leaderboard or rewards. You play White against the computer.</p>
       </div></div>`;
     $('#app').insertBefore(sec, $('#sheet-bg'));
-    $('#ed-back').onclick = () => LP.showPage('menu');
+    $('#ed-back').onclick = () => { if (creating && LP.community) LP.community.open(); else LP.showPage('menu'); };
+    $('#ed-title').oninput = (e) => { title = e.target.value; drawInfo(); };
+    $('#ed-cat').onchange = (e) => { cat = e.target.value; drawInfo(); };
+    $('#ed-test').onclick = testIt;
+    $('#ed-pub').onclick = publish;
+    if (LP.drag && LP.drag.attach) LP.drag.attach($('#ed-board'), { tap: (i) => put(i), selected: () => moveSel, can: (i) => brush === 'm' && !!cells[i] });
     $('#ed-white').onclick = () => { turn = 'w'; drawInfo(); };
     $('#ed-black').onclick = () => { turn = 'b'; drawInfo(); };
     ['K', 'Q', 'k', 'q'].forEach((c) => { $('#ed-c' + c).onchange = (e) => { castle[c] = e.target.checked; drawInfo(); }; });
@@ -274,13 +315,58 @@
     $('#ed-play2').onclick = () => { if (!problems().length) LP.playPosition(toFen(), 2); };
     built = true;
   }
-  function show() {
+  /** Test: play the position against the Insane computer as the side to move. Solving it is what unlocks Publish. */
+  function testIt() {
+    if (problems().length) return;
+    const c = catOf(cat), fen = toFen();
+    LP.playPopular({ id: 'test-draft', name: title.trim() || 'Your puzzle', goal: c.n ? 'Mate in ' + c.n : 'Win', fen, n: c.n, src: 'test', hash: hashOf() });
+  }
+  /** Called by the game when a Test is won. Counts only if the editor still holds exactly what was solved. */
+  function tested(h) {
+    if (h && h === hashOf()) { vhash = h; saveDraft(); }
+    else if (h) { vhash = ''; }
+  }
+  async function publish() {
+    if (!verified() || problems().length || !title.trim()) return;
+    const N = LP.onlineApi;
+    if (!N || !N.url()) { toast('Online is not set up'); return; }
+    const go = async () => {
+      const fen = toFen();
+      LP.openSheet('<h2>Publishing…</h2>');
+      const r = await N.post({ a: 'cmpub', pid: LP.global ? LP.global.pid() : '', name: LP.profile.name(), title: title.trim(), cat, fen }, 2);
+      if (!r || r.error || !r.id) {
+        LP.openSheet(`<h2>Could not publish</h2><p class="note">${esc((r && r.error) || 'Something went wrong.')}</p><button class="btn wide" id="ed-px2">Close</button>`, true);
+        $('#ed-px2').onclick = LP.closeSheet;
+        return;
+      }
+      LP.closeSheet();
+      try { localStorage.removeItem(DRAFT); } catch (e) { /* ignore */ }
+      title = ''; vhash = '';
+      if (LP.community) LP.community.published(r.id);
+    };
+    N.profileName(go);
+  }
+  function show(opts) {
     if (!built) { build(); fromFen(START); }
+    creating = !!(opts && opts.create);
+    moveSel = -1;
+    if (creating) {
+      const d = loadDraft();
+      if (opts.fresh) { try { localStorage.removeItem(DRAFT); } catch (e) { /* ignore */ } }
+      if (d && !opts.fresh && d.fen && !fromFen(d.fen)) { title = d.title || ''; cat = d.cat || 'mate1'; vhash = d.v || ''; }
+      else if (opts.fresh) { fromFen(START); title = ''; cat = 'mate1'; vhash = ''; }
+      const sel = $('#ed-cat');
+      sel.innerHTML = cats().map((c) => `<option value="${c.id}">${esc(c.label)}</option>`).join('');
+      sel.value = cat; $('#ed-title').value = title;
+    }
+    $('#ed-cr').classList.toggle('hidden', !creating);
+    document.querySelectorAll('.ed-playrow, .ed-fun').forEach((e) => e.classList.toggle('hidden', creating));
+    $('#ed-ttl').textContent = creating ? 'Create a puzzle' : 'Position editor';
     drawPalette();
     redraw();
     LP.showPage('editor');
   }
   const m = document.querySelector('.mode[data-mode="editor"]');
   if (m) m.addEventListener('click', show);
-  LP.editor = { show, toFen, fromFen: (f) => { const e = fromFen(f); if (built && !e) redraw(); return e; } };
+  LP.editor = { show, tested, toFen, fromFen: (f) => { const e = fromFen(f); if (built && !e) redraw(); return e; } };
 })();

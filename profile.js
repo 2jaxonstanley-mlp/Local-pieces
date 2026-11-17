@@ -1,6 +1,6 @@
 /**
- * Your local profile: the main username (top right of the menu) and one Elo rating for Classic and one for Secret Queen.
- * Ratings only move in one-player games against the computer, and a harder computer is worth more.
+ * Your local profile: the main username (top right of the menu) and one Elo rating each for Classic, Bullet and Rapid.
+ * Ratings only move in online games against real players (see recordOnline). Classic keeps its old rating, Bullet and Rapid start at 1000.
  * Profile picture and game settings (hints, move strength, auto-flip) are saved on this device.
  */
 (() => {
@@ -11,15 +11,17 @@
   const KEY = 'localPieces.profile';
   const SETTINGS_KEY = 'localPieces.settings';
   const START = 800, FLOOR = 100;
-  const BOT = { dumb: 10, easy: 150, medium: 600, hard: 1100, godly: 1800, insane: 2200 };
-  const MODES = { basic: 'Classic', secret: 'Secret Queen' };
+  const START_OF = { basic: 800, bullet: 1000, rapid: 1000 };   // Classic keeps the rating people already had
+  const BOT = { dumb: 10, easy: 150, medium: 600, hard: 1100, godly: 1800, insane: 2200, brilliant: 3000, patricia: 3200, stockfish: 3200 };
+  const MODES = { basic: 'Classic', bullet: 'Bullet', rapid: 'Rapid' };
   const blank = () => ({ w: 0, l: 0, d: 0 });
   const DEFAULT_SETTINGS = { hints: true, ratings: true, autoFlip: true };
-  let P = { name: '', elo: { basic: START, secret: START }, rec: { basic: blank(), secret: blank() }, pfp: '' };
+  let P = { name: '', elo: { basic: START, bullet: 1000, rapid: 1000 }, rec: { basic: blank() }, on: { basic: blank(), bullet: blank(), rapid: blank() }, pfp: '' };
   let settings = Object.assign({}, DEFAULT_SETTINGS);
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s) P = Object.assign(P, s, { elo: Object.assign(P.elo, s.elo || {}), rec: { basic: Object.assign(blank(), (s.rec || {}).basic), secret: Object.assign(blank(), (s.rec || {}).secret) }, pfp: s.pfp || '' });
+    if (s) P = Object.assign(P, s, { elo: Object.assign(P.elo, s.elo || {}), rec: { basic: Object.assign(blank(), (s.rec || {}).basic) }, on: { basic: Object.assign(blank(), (s.on || {}).basic), bullet: Object.assign(blank(), (s.on || {}).bullet), rapid: Object.assign(blank(), (s.on || {}).rapid) }, pfp: s.pfp || '' });
+    delete P.elo.secret;   // Secret Queen no longer has a rating
   } catch (e) { /* ignore */ }
   try {
     const s = JSON.parse(localStorage.getItem(SETTINGS_KEY));
@@ -28,21 +30,24 @@
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(P)); } catch (e) { /* ignore */ } };
   const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* ignore */ } };
 
-  const elo = (mode) => (P.elo[mode] != null ? P.elo[mode] : START);
-  const games = (mode) => P.rec[mode].w + P.rec[mode].l + P.rec[mode].d;
+  const elo = (mode) => (P.elo[mode] != null ? P.elo[mode] : (START_OF[mode] || START));
+  const games = (mode) => P.on[mode].w + P.on[mode].l + P.on[mode].d;
+  /** The average of the Classic, Bullet and Rapid ratings: the number shown on your profile and on the Elo leaderboard. */
+  const avg = () => Math.round(Object.keys(MODES).reduce((a, m) => a + elo(m), 0) / Object.keys(MODES).length);
+  const played = () => Object.keys(MODES).reduce((a, m) => a + games(m), 0);
 
-  /** score: 1 win, 0.5 draw, 0 loss. Returns { before, after, delta, bot }. */
-  function record(mode, level, score) {
-    if (!MODES[mode] || BOT[level] == null) return null;
-    const before = elo(mode), bot = BOT[level];
-    const expected = 1 / (1 + Math.pow(10, (bot - before) / 400));
+  /** An online game against a real player. score: 1 win, 0.5 draw, 0 loss. oppElo = their rating in the same mode.
+   *  Returns { before, after, delta, opp } and has already saved it. */
+  function recordOnline(mode, oppElo, score) {
+    if (!MODES[mode]) return null;
+    const before = elo(mode), opp = oppElo > 0 ? oppElo : (START_OF[mode] || START);
+    const expected = 1 / (1 + Math.pow(10, (opp - before) / 400));
     const k = games(mode) < 10 ? 40 : 28;                       // new players settle faster
-    let after = Math.round(before + k * (score - expected));
-    after = Math.max(FLOOR, after);
+    const after = Math.max(FLOOR, Math.round(before + k * (score - expected)));
     P.elo[mode] = after;
-    P.rec[mode][score === 1 ? 'w' : score === 0 ? 'l' : 'd']++;
+    P.on[mode][score === 1 ? 'w' : score === 0 ? 'l' : 'd']++;
     save(); render();
-    return { before, after, delta: after - before, bot };
+    return { before, after, delta: after - before, opp };
   }
 
   function setName(n) { P.name = String(n || '').trim().slice(0, 16); save(); render(); }
@@ -69,7 +74,7 @@
       av.classList.remove('has-pfp');
     }
     $('#acct-name').textContent = nm || 'Set name';
-    $('#acct-elo').textContent = nm ? 'Classic ' + elo('basic') : 'Tap to set up';
+    $('#acct-elo').textContent = nm ? 'Elo ' + avg() : 'Tap to set up';
   }
 
   function resizeImage(file, maxSize, cb) {
@@ -98,7 +103,7 @@
   }
 
   function sheet() {
-    const card = (m) => { const r = P.rec[m]; return '<div class="pf-card"><small>' + MODES[m] + '</small><b>' + elo(m) + '</b><span>' + r.w + 'W &middot; ' + r.l + 'L &middot; ' + r.d + 'D</span></div>'; };
+    const card = (m) => { const r = P.on[m]; return '<div class="pf-card"><small>' + MODES[m] + '</small><b>' + elo(m) + '</b><span>' + r.w + 'W &middot; ' + r.l + 'L &middot; ' + r.d + 'D</span></div>'; };
     LP.openSheet('<h2>Your profile<span class="sub">Your name, picture and ratings are saved on this device.</span></h2>' +
       '<div class="pf-av-row">' +
         '<div class="pf-av-preview" id="pf-av-preview">' + avHtml('pf-av-lg') + '</div>' +
@@ -110,8 +115,8 @@
       '</div>' +
       '<label for="pf-name">Username</label>' +
       '<input id="pf-name" type="text" maxlength="16" autocomplete="off" autocapitalize="words" placeholder="Player" enterkeyhint="done">' +
-      '<div class="pf-cards">' + card('basic') + card('secret') + '</div>' +
-      '<p class="note">Your rating changes when you play one-player games against the computer. Beating a harder computer earns more.</p>' +
+      '<div class="pf-cards">' + card('basic') + card('bullet') + card('rapid') + '</div>' +
+      '<p class="note">Average Elo: <b>' + avg() + '</b>. Ratings only change in online games against real players: Classic (no clock), Bullet (1 and 3 minute games) and Rapid (5 and 10 minute games).</p>' +
       '<button class="btn wide" id="pf-tour" style="margin-top:.8rem">Replay tutorial</button>' +
       '<div class="row" style="margin-top:.6rem"><button class="btn" id="pf-x">Close</button><button class="btn primary" id="pf-ok">Save</button></div>', true);
     const tour = $('#pf-tour');
@@ -170,10 +175,13 @@
 
   LP.profile = {
     name: () => P.name,
-    rec: (m) => Object.assign(blank(), P.rec[m]),
+    rec: (m) => Object.assign(blank(), P.on[m]),
+    avg,
+    played,
+    on: (m) => Object.assign(blank(), P.on[m]),
     setName,
     elo,
-    record,
+    recordOnline,
     botRating: (l) => BOT[l],
     MODES,
     pfp: () => P.pfp,

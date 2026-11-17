@@ -34,7 +34,7 @@
   function put(e) { const l = all(); const i = l.findIndex((x) => x.id === e.id); if (i >= 0) { l[i] = e; LP.store.set(l); } }
   const isRush = (e) => e.kind === 'rush';
   /** Analyses made by an older version (before the deeper engine and the new lesson) are redone. */
-  const anDone = (e) => !!(e.an && e.an.done && e.an.v === 4);
+  const anDone = (e) => !!(e.an && e.an.done && e.an.v === 5);
   const modeLabel = (e) => (isRush(e) ? 'Capture Rush' : ML[e.mode2 || e.mode] || 'Classic');
   /** The side a person played against the computer ('w' / 'b'), or null for two players or computer against computer. */
   function humanOf(e) {
@@ -55,7 +55,7 @@
   /* ------------------------------------------------------------------ chess helpers */
   const EX = window.Explain, AC = window.AnalyzeCore;
   const TEACH = { inaccuracy: 1, mistake: 1, blunder: 1, missedwin: 1 };      // the ratings that get a "try to find the fix" step
-  const WV = '3';                                                              // version of the background analysis files (bump it to make browsers fetch them again)
+  const WV = '5';                                                              // version of the background analysis files (bump it to make browsers fetch them again)
 
   /** Who is talking about whom: "You left your pawn..." or "Alice left their pawn...". */
   function voice(e, color) {
@@ -80,7 +80,9 @@
 
   /* ------------------------------------------------------------------ analysis (chess) */
   let token = 0;
-  function progress(p, sub) {
+  let pScale = [0, 100];   // while Stockfish will also look at the game, the built-in engine only fills the first part of the bar
+  function progress(p, sub, raw) {
+    if (!raw) p = pScale[0] + p * (pScale[1] - pScale[0]) / 100;
     const f = $('#an-fill'), t = $('#an-pct');
     if (f) f.style.width = Math.max(0, Math.min(100, p)) + '%';
     if (t) t.textContent = Math.floor(Math.max(0, Math.min(100, p))) + '%';
@@ -131,15 +133,20 @@
 
   async function analyseChess(e, sd, my) {
     const want = (i) => sd === 'both' || (i % 2 === 0) === (sd === 'w');
-    const an = e.an && e.an.v === 4 ? e.an : { v: 4, both: false, sides: [], done: false, plies: {} };
-    if (!an.sides || !an.sides.length) an.sides = e.an && e.an.v === 4 ? sidesOf(e) : [];
+    const an = e.an && e.an.v === 5 ? e.an : { v: 5, both: false, sides: [], done: false, plies: {} };
+    if (!an.sides || !an.sides.length) an.sides = e.an && e.an.v === 5 ? sidesOf(e) : [];
     an.done = false;
     const idxs = [];
     e.moves.forEach((m, i) => { if (want(i) && !an.plies[i]) idxs.push(i); });
-    const job = { mode: e.mode, fen: e.fen || null, secrets: { w: e.secrets.w, b: e.secrets.b }, moves: e.moves, idxs, budget: 30000 };
+    const job = { mode: e.mode, fen: e.fen || null, secrets: { w: e.secrets.w, b: e.secrets.b }, moves: e.moves, idxs, budget: 50000 };
+    const SF = LP.Stockfish;
+    const useSf = !!(idxs.length && SF && job.mode === 'basic' && await SF.load());   // Stockfish double-checks every move (Classic-style games only)
+    if (useSf) { job.budget = 20000; pScale = [0, 55]; }
     progress(1, 'Starting the engine');
-    const res = idxs.length ? await runCore(job, my) : {};
+    let res = idxs.length ? await runCore(job, my) : {};
+    pScale = [0, 100];
     if (!res || my !== token) return null;
+    if (useSf) { try { res = (await sfRefine(job, res, my)) || res; } catch (x) { /* keep the built-in engine's result */ } if (my !== token) return null; an.sf = true; }
     progress(97, 'Writing the lesson');
     await wait(30);
     const g = AC.startPosition(job);
@@ -170,6 +177,93 @@
     addSides(an, sd);
     an.done = true;
     return an;
+  }
+
+  /* ------------------------------------------------------------------ Stockfish second opinion */
+  const SF_SKIP = { book: 1, forced: 1, matewhite: 1, mateblack: 1 };
+  const mvk = (m) => ({ f: m.from, t: m.to, p: m.promo || 0, q: m.q || 0 });
+  /** A line of uci moves as [from, to, promo, q] arrays, starting from position g0 (optionally after `first` was played). */
+  function sfLine(g0, first, pv, max) {
+    const c = MR.clone(g0), out = [];
+    if (first) { out.push([first.from, first.to, first.promo || 0, first.q || 0]); c.makeMove(first); }
+    for (let k = 0; k < (pv || []).length && out.length < max; k++) {
+      const lm = LP.Stockfish.legalOf(c, pv[k]);
+      if (!lm) break;
+      out.push([lm.from, lm.to, lm.promo || 0, lm.q || 0]);
+      c.makeMove(lm);
+    }
+    return out;
+  }
+
+  /**
+   * Stockfish looks at every reviewed move (quickly), then much harder at the ones that matter, and decides the final label, the better
+   * move and the lines shown in the lesson. The built-in engine's answer is kept for anything Stockfish cannot judge.
+   */
+  async function sfRefine(job, res, my) {
+    const SF = LP.Stockfish;
+    const idxs = job.idxs.filter((i) => res[i] && !SF_SKIP[res[i].r]);
+    if (!idxs.length) return res;
+    const g = AC.startPosition(job);
+    const fens = [g.toFen()], before = {};
+    for (let i = 0; i < job.moves.length; i++) {
+      if (idxs.includes(i)) before[i] = MR.clone(g);
+      g.makeMove(job.moves[i]);
+      fens.push(g.toFen());
+    }
+    const need = new Set();
+    idxs.forEach((i) => { need.add(i); need.add(i + 1); });
+    const list = Array.from(need).sort((a, b) => a - b);
+    const ms1 = Math.max(120, Math.min(350, 18000 / list.length));
+    const A = {};
+    for (let n = 0; n < list.length; n++) {
+      if (my !== token) return null;
+      progress(55 + n / list.length * 24, 'Stockfish: position ' + (n + 1) + ' of ' + list.length, true);
+      A[list[n]] = await SF.analyse(fens[list[n]], { movetime: ms1, multipv: 2 });
+    }
+    if (!SF.available()) return res;   // the engine vanished: keep the built-in result
+    const evalOf = (i) => {   // best score for the side to move, and the score of the move that was played
+      const b = A[i], a = A[i + 1], mv = job.moves[i];
+      if (!b || !b.lines.length) return null;
+      const inLine = b.lines.find((l) => l.move === SF.alg(mv.from) + SF.alg(mv.to) + ({ 5: 'q', 4: 'r', 3: 'b', 2: 'n' }[mv.promo] || ''));
+      const bs = b.lines[0].score;
+      const ps = inLine ? inLine.score : a && a.lines.length ? -a.lines[0].score : 0;
+      return { bs, ps: Math.min(ps, bs) };
+    };
+    const flagged = idxs.filter((i) => { const v = evalOf(i); return v && (AC.VERIFY[res[i].r] || wpLoss(v.bs, v.ps) >= 0.03); });
+    const ms2 = Math.max(450, Math.min(1400, 12000 / Math.max(1, flagged.length * 2)));
+    for (let n = 0; n < flagged.length; n++) {
+      if (my !== token) return null;
+      progress(79 + n / flagged.length * 17, 'Stockfish: looking closer at move ' + (Math.floor(flagged[n] / 2) + 1), true);
+      const i = flagged[n];
+      const b = await SF.analyse(fens[i], { movetime: ms2, multipv: 3 });
+      if (b) A[i] = b;
+      const a = await SF.analyse(fens[i + 1], { movetime: ms2, multipv: 1 });
+      if (a) A[i + 1] = a;
+    }
+    const out = Object.assign({}, res);
+    idxs.forEach((i) => {
+      const v = evalOf(i), b = A[i], a = A[i + 1];
+      if (!v) return;
+      const g0 = before[i], legal = g0.legalMoves();
+      const mv = legal.find((x) => same(x, job.moves[i]));
+      if (!mv) return;
+      const top = b.lines.map((l) => ({ move: SF.legalOf(g0, l.move), score: l.score })).filter((t) => t.move);
+      if (!top.length) return;
+      const gc = MR.clone(g0);
+      const f = MR.facts(gc, mv);
+      let r = null;
+      try { r = MR.classify(MR.clone(g0), mv, f, { top, legal: legal.length }, v.ps, MR.bookOf(MR.clone(g0))); } catch (x) { return; }
+      const id = r ? r.id : null;
+      const bestMv = top[0].move, playedBest = same(bestMv, mv);
+      const p = { r: id, b: mvk(bestMv), bs: Math.round(v.bs), ps: Math.round(v.ps), d: b.depth || 0, ver: true, sf: 1,
+        top: top.map((t) => [mvk(t.move), Math.round(t.score)]), facts: { before: Math.round(f.before), afterQs: Math.round(f.afterQs), captured: !!f.captured } };
+      if (AC.TEACH[id]) {
+        p.ref = sfLine(g0, mv, a && a.lines[0] ? a.lines[0].pv : [], 5);
+        if (!playedBest) p.bl = sfLine(g0, null, b.lines[0].pv, 5);
+      } else if (AC.VERIFY[id] && playedBest) p.bl = sfLine(g0, null, b.lines[0].pv, 4);
+      out[i] = p;
+    });
+    return out;
   }
 
   /** A forfeit: was the position really lost? */
@@ -265,8 +359,8 @@
   async function analyseRush(e, sd, my) {
     const lab = window.Rush && window.Rush.lab;
     if (!lab) return null;
-    const an = e.an && e.an.v === 4 ? e.an : { v: 4, both: false, sides: [], done: false, plies: {} };
-    if (!an.sides || !an.sides.length) an.sides = e.an && e.an.v === 4 ? sidesOf(e) : [];
+    const an = e.an && e.an.v === 5 ? e.an : { v: 5, both: false, sides: [], done: false, plies: {} };
+    if (!an.sides || !an.sides.length) an.sides = e.an && e.an.v === 5 ? sidesOf(e) : [];
     an.done = false;
     const frames = lab.framesOf(e);
     const want = (i) => {
@@ -396,6 +490,36 @@
     return e.result || '';
   }
 
+  /* ---- Weakness focus: the themes behind your mistakes across your analysed games, with a puzzle kind to practise each */
+  const THEME = {
+    hang: ['Leaving pieces hanging', 'hanging'], fork: ['Forks (missing or allowing them)', 'fork'], pin: ['Pins', 'pin'],
+    win: ['Missing a forced checkmate', 'mate'], mated: ['Walking into checkmate', 'backrank'], threat: ["Missing your opponent's threats", 'best'],
+    miss: ['Missing a tactic', 'best'], generic: ['Finding the strongest move', 'best'],
+  };
+  function weakness() {
+    const T = {}, R2 = {};
+    let games = 0, bad = 0;
+    entries().forEach((e) => {
+      const h = humanOf(e);
+      if (isRush(e) || !h || !anDone(e) || !(e.an.sides || []).includes(h)) return;
+      games++;
+      Object.keys(e.an.plies || {}).forEach((k) => {
+        const i = +k, p = e.an.plies[k];
+        if (i % 2 !== (h === 'w' ? 0 : 1) || !p || !TEACH[p.r]) return;
+        const th = (p.n && THEME[p.n.k]) ? p.n.k : 'generic';
+        T[th] = (T[th] || 0) + 1; R2[p.r] = (R2[p.r] || 0) + 1; bad++;
+      });
+    });
+    return { games, bad, themes: Object.keys(T).sort((a, b) => T[b] - T[a]).map((k) => ({ k, n: T[k] })), ratings: R2 };
+  }
+  function weaknessHtml() {
+    const w = weakness();
+    if (w.games < 3) return '';
+    if (!w.bad) return '<div class="an-weak"><b>Your focus</b><span>No clear weak spot in your last ' + w.games + ' analysed games. Nice work.</span></div>';
+    const top = w.themes.slice(0, 2);
+    return `<div class="an-weak"><b>Your focus</b><span>From ${w.games} analysed games: ${w.ratings.blunder || 0} blunders, ${w.ratings.mistake || 0} mistakes, ${w.ratings.inaccuracy || 0} inaccuracies${w.ratings.missedwin ? ', ' + w.ratings.missedwin + ' missed wins' : ''}.</span>
+      ${top.map((t) => `<div class="an-weak-row"><span>${esc(THEME[t.k][0])} <em>${t.n}×</em></span><button class="btn an-prac" data-k="${THEME[t.k][1]}">Practise</button></div>`).join('')}</div>`;
+  }
   function renderLibrary() {
     const list = entries();
     const box = $('#an-list');
@@ -403,7 +527,7 @@
       box.innerHTML = '<div class="an-empty"><b>No games yet</b><span>After a game ends, tap Analyze game to save it here and get a lesson on it.</span></div>';
       return;
     }
-    box.innerHTML = list.map((e) => {
+    box.innerHTML = '<div class="an-weak an-rtbox">' + retryRow('an-rt2') + '</div>' + weaknessHtml() + list.map((e) => {
       const done = anDone(e), sum = e.an && e.an.sum;
       const h = humanOf(e);
       let chips = '';
@@ -419,6 +543,8 @@
         <div class="an-btns"><button class="btn primary an-open">${done ? 'Review' : 'Analyze'}</button><button class="btn an-del" aria-label="Delete">Delete</button></div>
       </div>`;
     }).join('');
+    const rt2 = $('#an-rt2'); if (rt2) rt2.onchange = (ev) => setRetry(ev.target.checked);
+    box.querySelectorAll('.an-prac').forEach((b) => { b.onclick = () => { if (window.Puzzle && window.Puzzle.ask) window.Puzzle.ask(b.dataset.k); }; });
     box.querySelectorAll('.an-card').forEach((card) => {
       const id = card.dataset.id;
       card.querySelector('.an-open').onclick = () => begin(id);
@@ -441,23 +567,20 @@
   function showLibrary() { renderLibrary(); LP.showPage('analyze'); }
 
   /* ------------------------------------------------------------------ start an analysis */
+  /** "Try the bad moves again": off by default. Off = the stronger move is shown for you; on = you get to find it yourself. */
+  const retryOn = () => { try { return localStorage.getItem('lp_anretry') === '1'; } catch (x) { return false; } };
+  const setRetry = (v) => { try { localStorage.setItem('lp_anretry', v ? '1' : '0'); } catch (x) { /* ignore */ } };
+  const retryRow = (id) => `<label class="an-opt"><input type="checkbox" id="${id}"${retryOn() ? ' checked' : ''}><span><b>Try the bad moves again</b><em>Off: the stronger move is shown for you. On: you play it yourself.</em></span></label>`;
+
   function begin(id) {
     const e = find(id);
     if (!e) { showLibrary(); return; }
     if (anDone(e)) { enter(e); return; }
-    // always ask which side to analyze, with the player names (also for two-player games)
-    const nm = (c) => esc(nameOf(e, c));
-    LP.openSheet(`<h2>Who should I analyze?<span class="sub">I will look at every move with a deeper search than the game used.</span></h2>
-      <div class="stack">
-        <button class="btn primary big" id="aw-w">Just ${nm('w')}<small>${isRush(e) ? 'the White pieces' : 'White'}</small></button>
-        <button class="btn big" id="aw-b">Just ${nm('b')}<small>${isRush(e) ? 'the Black pieces' : 'Black'}</small></button>
-        <button class="btn big" id="aw-both">Both players<small>${nm('w')} and ${nm('b')}</small></button>
-        <button class="btn" id="aw-x">Cancel</button>
-      </div>`, true);
-    $('#aw-w').onclick = () => run(e, 'w');
-    $('#aw-b').onclick = () => run(e, 'b');
-    $('#aw-both').onclick = () => run(e, 'both');
-    $('#aw-x').onclick = () => { LP.closeSheet(); };
+    LP.openSheet(`<h2>Analyze this game<span class="sub">Both players, every move.</span></h2>${retryRow('an-rt')}
+      <div class="row"><button class="btn" id="an-no">Cancel</button><button class="btn primary" id="an-go">Analyze</button></div>`, true);
+    $('#an-rt').onchange = (ev) => setRetry(ev.target.checked);
+    $('#an-no').onclick = LP.closeSheet;
+    $('#an-go').onclick = () => { LP.closeSheet(); run(e, 'both'); };
   }
 
   async function run(e, sd) {
@@ -685,6 +808,14 @@
     }
     return 0.5;
   }
+  /** The eval bar beside the board (chess games only): White's chance at the position shown. */
+  function updateEvalBar() {
+    const wrap = document.querySelector('#review .rv-board-wrap'), old = wrap && wrap.querySelector(':scope > .evbar');
+    if (!R || R.kind !== 'chess' || !LP.evalBar) { if (old) old.classList.add('hidden'); return; }
+    if (!wrap) return;
+    if (!R.bar) R.bar = LP.evalBar.attach(wrap);
+    if (R.bar) R.bar.set(R.ply >= R.total && R.total && R.entry.winner ? (R.entry.winner === 'w' ? 1 : 0) : whiteWp(R.ply), flipped);
+  }
   function updateEval() {
     const box = $('#rv-eval');
     if (!box || !R) return;
@@ -710,6 +841,7 @@
         else { const k = EV.eq; c = k.c; ic = k.ic; t = k.t; }
       }
     }
+    updateEvalBar();
     box.style.color = c;
     box.innerHTML = `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${EVI[ic]}</svg><span>${esc(t)}</span>`;
   }
@@ -842,10 +974,27 @@
     b.disabled = off;
     b.classList.toggle('again', again);
     sk.classList.toggle('hidden', !skip);
-    if (sol) sol.classList.toggle('hidden', !((R.phase === 'try' || R.phase === 'wrong') && R.retry && !R.retry.done));
+    if (sol) sol.classList.toggle('hidden', !(R.retry && R.retry.practice && !R.retry.done && (R.phase === 'try' || R.phase === 'wrong')));   // (only while practising: otherwise the stronger move is shown automatically)
+    const pv = $('#rv-prev'), nx = $('#rv-next');
+    if (pv) { const ok = canStep(); pv.disabled = !ok || R.ply <= 0; nx.disabled = !ok || R.ply >= R.total; }
     // export the board: chess only, and only while nothing is playing on its own
     const ex = $('#rv-export');
     if (ex) { ex.classList.toggle('hidden', R.kind !== 'chess'); ex.disabled = R.phase === 'replay'; }
+  }
+
+  /** Back / forward arrows: look at the game move by move while a highlight is not busy. Next highlight carries on from where the lesson was. */
+  function canStep() { return !!R && (R.phase === 'intro' || R.phase === 'info' || R.phase === 'passed' || R.phase === 'end'); }
+  function stepView(d) {
+    if (!canStep()) return;
+    const n = Math.max(0, Math.min(R.total, R.ply + d));
+    if (n === R.ply) return;
+    setPly(n, true);
+    R.showResign = false;
+    const i = n - 1;
+    if (i < 0) { say({ cap: 'Start of the game', text: 'The starting position. Use the arrows to look through the game.' }); return; }
+    const p = R.an.plies[i], r = ratingAt(i);
+    const san = R.entry.sans && R.entry.sans[i] ? ' · ' + R.entry.sans[i] : '';
+    say({ cap: capFor(i) + san, text: p ? noteText(i, true) : 'This move was not part of the analysis.', rate: r || undefined });
   }
 
   const capFor = (i) => (R.kind === 'chess' ? 'Move ' + (Math.floor(i / 2) + 1) + (i % 2 ? ' (Black)' : ' (White)') : 'Move ' + (i + 1));
@@ -918,6 +1067,7 @@
     LP.closeSheet();
     if (!an) return;
     e.an = an; put(e); refreshMenu();
+    try { if (LP.rewards) LP.rewards.event('analyzed'); } catch (x) { /* ignore */ }
     enter(e);
   }
 
@@ -1047,22 +1197,22 @@
       render();
       const rs = R.an.resign;
       const r = MR.get(rs.loser === 'w' ? 'resignwhite' : 'resignblack');
-      if (rs.b) {
+      if (rs.b && retryOn()) {
         say({ cap: step, text: rs.t, rate: r });
         await wait(1800);
         if (!R || R.run !== run) return;
-        startRetry({ ply: R.total, resign: true });
+        showFix({ ply: R.total, resign: true });
       } else { R.phase = 'info'; say({ cap: step, text: rs.t, rate: r }); }
       return;
     }
     const i = m.ply;
     if (!(await playUp(i, run, step))) return;
     if (!(await replayMoment(k, run))) return;
-    if (isTeach(i)) {
+    if (isTeach(i) && retryOn()) {
       say({ cap: step + ' · ' + capFor(i), text: noteText(i), rate: ratingAt(i) });
       await wait(1500);
       if (!R || R.run !== run) return;
-      startRetry({ ply: i });
+      showFix({ ply: i });
     } else {
       showResult(i, step);
     }
@@ -1169,12 +1319,25 @@
     promptTry();
   }
 
-  /** The bubble while the player looks for the fix: what went wrong (no spoilers) and what to do. */
+  /** A highlight that needs a better move: the stronger move is shown on the board (no Try Again), then Next highlight opens. Skip jumps ahead at any time. */
+  async function showFix(o) {
+    startRetry(o);
+    const rt = R.retry;
+    if (retryOn()) { rt.practice = true; promptTry(); updateMain(); return; }   // "Try the bad moves again" is on: the player finds the move
+    rt.auto = true;
+    promptTry();
+    await wait(900);
+    if (R && R.retry === rt && !rt.done) await showSolution();
+  }
+
+  /** The bubble while the stronger move is about to be shown: what went wrong and what is coming. what went wrong (no spoilers) and what to do. */
   function promptTry() {
     const rt = R.retry;
     const who = rt.col === 'w' ? 'White' : 'Black';
     const note = rt.resign ? R.an.resign.t : noteText(rt.ply);
-    const ask = rt.kind === 'win' ? `Your turn: find the forced checkmate in ${plural(rt.n, 'move')}. Play the moves on the board.` : `Your turn: find a better move for ${who}.`;
+    const ask = rt.practice
+      ? (rt.kind === 'win' ? `Your turn: find the forced checkmate in ${plural(rt.n, 'move')}. Play the moves on the board.` : `Your turn: find a better move for ${who}.`)
+      : (rt.kind === 'win' ? `There was a forced checkmate in ${plural(rt.n, 'move')}. Watch it.` : `A stronger move was available for ${who}. Watch it.`);
     say({ cap: (R.cap ? R.cap + ' · ' : '') + who + ' to move', html: `<p class="rv-text">${esc(note)}</p><p class="rv-ask">${esc(ask)}</p>` });
   }
 
@@ -1197,7 +1360,7 @@
 
   function onSquare(i) {
     const rt = R && R.retry;
-    if (!rt || rt.busy || rt.done || rt.locked) return;
+    if (!rt || rt.auto || rt.busy || rt.done || rt.locked) return;
     const v = R.view, p = v.at(i);
     if (rt.sel >= 0 && rt.targets.indexOf(i) >= 0) { attempt(rt.sel, i); return; }
     if (p && p.w === (v.turn() === 'w')) { rt.sel = i; rt.targets = v.targets(i); }
@@ -1248,6 +1411,7 @@
       } else { ok = false; msg = 'That is not the best idea.'; }
     }
     if (!R || R.retry !== rt) return;        // (Skip was pressed while the move was being checked)
+    if (rt.auto) ok = true;                  // the engine's own move is being shown, never a wrong try
     if (!ok) {
       rt.fails++;
       if (rt.fails >= 2 && rt.hint < 0) rt.hint = await hintFrom();
@@ -1265,8 +1429,8 @@
     render();
     slide(toIdx(m.from), toIdx(m.to));
     if (rt.kind === 'win') {
-      if (g.isCheckmate()) { retryDone(`Checkmate! ${cap1(ph.ger)} finishes it. You found the win.`); return; }
-      retryMessage(`Yes! That keeps the attack going. Checkmate in ${plural(rt.n - 1, 'more move')}.`);
+      if (g.isCheckmate()) { retryDone(rt.practice ? `Checkmate! ${cap1(ph.ger)} finishes it. You found the win.` : `Checkmate! ${cap1(ph.ger)} finishes it.`); return; }
+      retryMessage(rt.auto ? `${cap1(ph.ger)} keeps the attack going. Checkmate in ${plural(rt.n - 1, 'more move')}.` : `Yes! That keeps the attack going. Checkmate in ${plural(rt.n - 1, 'more move')}.`);
       await wait(650);
       if (!R || R.retry !== rt) return;
       let reply = null;
@@ -1279,9 +1443,9 @@
       render();
       slide(toIdx(reply.from), toIdx(reply.to));
       rt.busy = false;
-      retryMessage(`The opponent replied. Find checkmate in ${plural(rt.n, 'move')}.`);
+      retryMessage(rt.auto ? `The opponent replied. Checkmate in ${plural(rt.n, 'move')} is still on.` : `The opponent replied. Find checkmate in ${plural(rt.n, 'move')}.`);
     } else {
-      retryDone(rt.resign ? `That's it! ${cap1(ph.ger)} keeps the game going.` : `That's it! ${cap1(ph.ger)}${w ? ', ' + w + ',' : ''} fixes the mistake.`);
+      retryDone(rt.practice ? (rt.resign ? `That's it! ${cap1(ph.ger)} keeps the game going.` : `That's it! ${cap1(ph.ger)}${w ? ', ' + w + ',' : ''} fixes the mistake.`) : rt.resign ? `A better try was ${ph.ger}, which keeps the game going.` : `A stronger idea was ${ph.ger}${w ? ', ' + w + ',' : ''} which fixes the mistake.`);
     }
   }
 
@@ -1292,19 +1456,31 @@
     return -1;
   }
 
+  /** After the stronger move was shown: one tap to practise the same position yourself (the old try-and-retry drill). */
+  function practicePill(rt) {
+    if (!rt.auto || rt.resign) return [];
+    return [{ label: 'Practice this position', fn: () => practice({ ply: rt.ply, resign: false }) }];
+  }
+  function practice(o) {
+    if (!R || R.phase === 'replay') return;
+    startRetry(o);
+    if (R.retry) R.retry.practice = true;
+    promptTry();
+    updateMain();
+  }
+
   /** The try succeeded: Next highlight is ready again. */
   function retryDone(text) {
     const rt = R.retry;
-    if (rt.shown) text = text.replace(/^That's it! /, 'Here is the answer. ').replace(/^Checkmate! /, 'The answer is checkmate. ');
     rt.done = true; rt.busy = false;
     R.phase = 'passed';
     const i = rt.ply, p = rt.resign ? null : R.an.plies[i];
     if (R.kind === 'rush' && p && p.pg) {
       R.arrows = [];
-      say({ cap: (R.cap ? R.cap + ' · ' : '') + 'Well done', html: `<p class="rv-text">${esc(text)}</p>${rushExtras(i, p)}` });
+      say({ cap: (R.cap ? R.cap + ' · ' : '') + (rt.auto ? 'Stronger move' : 'Well done'), html: `<p class="rv-text">${esc(text)}</p>${rushExtras(i, p)}`, pills: practicePill(rt) });
       bindAlts(i);
-    } else say({ cap: (R.cap ? R.cap + ' · ' : '') + 'Well done', text });
-    toast('Nice!');
+    } else say({ cap: (R.cap ? R.cap + ' · ' : '') + (rt.auto ? 'Stronger move' : 'Well done'), text, pills: practicePill(rt) });
+    if (!rt.auto) toast('Nice!');
     render();
   }
 
@@ -1322,7 +1498,7 @@
     const hit = rt.rk.find((x) => x[0] === from && x[1] === to);
     const bestScore = rt.rk[0][2];
     const isOriginal = rt.played && rt.played.f === from && rt.played.t === to;
-    const ok = !isOriginal && hit && hit[2] >= bestScore - 0.9;
+    const ok = rt.auto || (!isOriginal && hit && hit[2] >= bestScore - 0.9);
     if (!ok) {
       rt.fails++;
       if (rt.fails >= 2) rt.hint = rt.best.f;
@@ -1333,7 +1509,7 @@
     applyRush(from, to);
     rt.hint = -1; R.fails[rt.key] = 0;
     render(); slide(from, to);
-    retryDone(cap ? `That's it! Taking the ${PN[RT[cap.t]]} was the right idea.` : "That's it! A smart, safe move.");
+    retryDone(rt.practice ? (cap ? `That's it! Taking the ${PN[RT[cap.t]]} was the right idea.` : "That's it! A smart, safe move.") : cap ? `A stronger idea was taking the ${PN[RT[cap.t]]}.` : 'A stronger idea was a smart, safe move.');
   }
 
   /* ------------------------------------------------------------------ open / close the review */
@@ -1404,6 +1580,8 @@
         </div>
         <div id="rv-rate" class="rv-rate"></div>
         <div class="rv-ctl">
+          <button id="rv-prev" class="rv-arr" aria-label="Previous move" title="Previous move (left arrow)">&#9664;</button>
+          <button id="rv-next" class="rv-arr" aria-label="Next move" title="Next move (right arrow)">&#9654;</button>
           <button id="rv-main" class="rv-main">Begin</button>
           <button id="rv-skip" class="rv-skip hidden">Skip</button>
           <button id="rv-sol" class="rv-skip rv-sol hidden">Solution</button>
@@ -1423,6 +1601,16 @@
       ev.preventDefault();
     }, { passive: false });
     $('#rv-skip').onclick = skipMoment;
+    $('#rv-prev').onclick = () => stepView(-1);
+    $('#rv-next').onclick = () => stepView(1);
+    document.addEventListener('keydown', (ev) => {
+      if (!R || ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return;
+      const pg = document.getElementById('review');
+      if (!pg || !pg.classList.contains('active')) return;
+      if (!$('#sheet-bg').classList.contains('hidden')) return;
+      ev.preventDefault();
+      stepView(ev.key === 'ArrowLeft' ? -1 : 1);
+    });
     $('#rv-sol').onclick = showSolution;
     $('#rv-export').onclick = () => {
       if (!R || R.kind !== 'chess' || R.phase === 'replay' || !LP.exporter) return;

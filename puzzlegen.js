@@ -709,6 +709,413 @@
     return { type: 'sac', diff, pos: p.pos, good: p.sol, explain: 'It gives up material but forces checkmate in ' + n + '.', san: sanOf(g, m0), loss: cost };
   }
 
+  /* ------------------------------------------------- more one-move kinds */
+  const DIRS_R = [16, -16, 1, -1], DIRS_B = [17, 15, -15, -17];
+  const dirsOf = (t) => (t === ROOK ? DIRS_R : t === BISHOP ? DIRS_B : t === QUEEN ? DIRS_R.concat(DIRS_B) : []);
+  const valOf = (p) => ((p & 7) === KING ? 9999 : PV[p & 7]);
+  /** After White's move m: the slider on m.to has a Black piece X in front and another Black piece Y right behind it on the same line. */
+  function lineInfo(g, m, kind) {
+    const me = g.board[m.from];
+    const ty = me & 7;
+    if (g.board[m.to] || !dirsOf(ty).length) return null;
+    g.makeMove(m);
+    let out = null;
+    try {
+      for (const d of dirsOf(ty)) {
+        let s = m.to + d;
+        while (!(s & 0x88) && !g.board[s]) s += d;
+        if (s & 0x88) continue;
+        const x = g.board[s];
+        if ((x & 24) !== BLACK || (x & 7) === KING && kind === 'pin') continue;
+        let y = s + d;
+        while (!(y & 0x88) && !g.board[y]) y += d;
+        if (y & 0x88) continue;
+        const yp = g.board[y];
+        if ((yp & 24) !== BLACK) continue;
+        if (kind === 'pin' && (valOf(yp) > valOf(x)) && (x & 7) !== PAWN) out = { x: s, y, xt: x & 7, yt: yp & 7, piece: ty };
+        if (kind === 'skewer' && valOf(x) > valOf(yp) && (yp & 7) !== PAWN && PV[yp & 7] >= 300) out = { x: s, y, xt: x & 7, yt: yp & 7, piece: ty };
+        if (out) break;
+      }
+    } catch (e) { out = null; }
+    g.unmakeMove();
+    return out;
+  }
+  /** Lays out `n` extra pieces on free squares (never next to a king pair, never on the back ranks for pawns). */
+  function sprinkle(g, used, col, pool, n) {
+    for (let i = 0; i < n; i++) {
+      let s = -1;
+      for (let k = 0; k < 40; k++) { const x = pick(SQUARES); if (!used.has(x) && !g.board[x]) { s = x; break; } }
+      if (s < 0) return false;
+      const ty = pick(pool);
+      if (ty === PAWN && (rankOf(s) === 0 || rankOf(s) === 7)) continue;
+      g.board[s] = col | ty; used.add(s);
+    }
+    return true;
+  }
+  function kingsIn(g, used, near) {
+    const spot = (avoid) => { for (let i = 0; i < 40; i++) { const x = pick(SQUARES); if (!used.has(x) && !g.board[x] && (avoid < 0 || dist(x, avoid) >= 2)) return x; } return -1; };
+    let bk = near != null ? near : spot(-1);
+    if (bk < 0) return false;
+    if (near == null) { g.board[bk] = BLACK | KING; used.add(bk); }
+    const wk = spot(bk); if (wk < 0) return false;
+    g.board[wk] = WHITE | KING; used.add(wk);
+    return true;
+  }
+  /** Shared proof for the one-move kinds: pattern at depth 3, enough material won, no close rival. */
+  function proveOne(g, diff, level, kind, patt, needs, noMate) {
+    if (g.inCheck(BLACK) || g.inCheck(WHITE) || !g.hasLegalMove()) return null;
+    if (loose(g, WHITE) || loose(g, BLACK)) return null;
+    const top = bestAt(g, 3);
+    if (!top.move) return null;
+    const info = patt(g, top.move);
+    if (!info) return null;
+    if (noMate && top.score > MATE - 100) return null;
+    const mated = top.score > MATE - 100;
+    const now = evalSide(g);
+    const need = needs[diff] != null ? needs[diff] : needs.normal;
+    if (!mated && top.score - now < (level >= 1 ? need * 0.7 : need)) return null;
+    if (rivalWithin(g, top.move, top.score, 3, level >= 1 ? 90 : 130)) return null;
+    return { top, info, mated, now, gain: Math.max(1, Math.round((top.score - now) / 100)) };
+  }
+
+  /** Pin: a slider lines up against a piece that cannot move without exposing a more valuable piece behind it. */
+  function tryLine(kind, diff, level) {
+    const S = pick(kind === 'pin' ? [BISHOP, BISHOP, ROOK, ROOK, QUEEN] : [BISHOP, ROOK, ROOK, QUEEN]);
+    const dirs = S === QUEEN ? pick([DIRS_R, DIRS_B]) : dirsOf(S);
+    const d = pick(dirs);
+    const g = blank();
+    const X = pick(SQUARES);
+    const k = 1 + rnd(2), j = 1 + rnd(3);
+    const Y = X + d * k, D = X - d * j;
+    if ((Y & 0x88) || (D & 0x88)) return null;
+    for (let i = 1; i < k; i++) if (X + d * i & 0x88) return null;
+    for (let i = 1; i < j; i++) if (X - d * i & 0x88) return null;
+    let xt, yt;
+    if (kind === 'pin') {
+      xt = pick([KNIGHT, KNIGHT, BISHOP, ROOK, PAWN].filter((t) => diff !== 'easy' || t !== PAWN));
+      yt = pick([KING, KING, QUEEN, ROOK, QUEEN]);
+      if (PV[yt] <= PV[xt] && yt !== KING) yt = QUEEN;
+    } else {
+      xt = pick([KING, KING, QUEEN, ROOK]);
+      yt = pick([ROOK, QUEEN, BISHOP, KNIGHT]);
+      if (xt === QUEEN && yt === QUEEN) yt = ROOK;
+      if (xt === ROOK && (yt === ROOK || yt === QUEEN)) yt = BISHOP;
+    }
+    const used = new Set([X, Y, D]);
+    g.board[X] = BLACK | xt; g.board[Y] = BLACK | yt;
+    // where the slider starts: one move from D, off the line
+    const t = blank(); t.board[D] = WHITE | S;
+    const starts = t.genPieceMoves(D).map((m) => m.to).filter((x) => !used.has(x) && Math.abs(x - D) % Math.abs(d) !== 0);
+    if (!starts.length) return null;
+    const st = pick(starts);
+    g.board[st] = WHITE | S; used.add(st);
+    for (let i = 1; i < k; i++) used.add(X + d * i);
+    for (let i = 1; i < j; i++) used.add(X - d * i);
+    // the kings (the Black king is one of the two line pieces for pins/skewers that use it)
+    if (xt === KING || yt === KING) { if (!kingsIn(g, used, 1)) return null; }
+    else if (!kingsIn(g, used)) return null;
+    // a helper that attacks the front piece on a pin
+    if (kind === 'pin' && xt !== PAWN) {
+      const helpers = [];
+      if (xt !== KING) {
+        for (const dd of [15, 17]) { const p = X - dd; if (!(p & 0x88) && rankOf(p) > 0 && rankOf(p) < 7 && !used.has(p)) helpers.push([p, PAWN]); }
+        for (const dd of [33, 31, 18, 14, -33, -31, -18, -14]) { const p = X + dd; if (!(p & 0x88) && !used.has(p)) helpers.push([p, KNIGHT]); }
+      }
+      if (helpers.length && Math.random() < 0.8) { const [p, ty] = pick(helpers); g.board[p] = WHITE | ty; used.add(p); }
+    }
+    const clutter = diff === 'easy' ? 1 + rnd(2) : diff === 'normal' ? 2 + rnd(2) : 3 + rnd(3);
+    if (!sprinkle(g, used, WHITE, [ROOK, BISHOP, KNIGHT, PAWN, PAWN], clutter - rnd(2))) return null;
+    if (!sprinkle(g, used, BLACK, [PAWN, PAWN, KNIGHT, BISHOP, ROOK], clutter)) return null;
+    const mine = g.legalMoves().find((m) => m.from === st && m.to === D);
+    if (!mine) return null;
+    if (!lineInfo(g, mine, kind)) return null;
+    const r = proveOne(g, diff, level, kind, (gg, m) => lineInfo(gg, m, kind), kind === 'pin' ? { easy: 220, normal: 200, hard: 220 } : { easy: 250, normal: 280, hard: 280 }, true);
+    if (!r) return null;
+    const i = r.info, mv = r.top.move;
+    const pn = PNAME[i.piece], xn = i.xt === KING ? 'king' : PNAME[i.xt], yn = i.yt === KING ? 'king' : PNAME[i.yt];
+    let explain;
+    if (kind === 'pin') explain = 'The ' + pn + ' on ' + alg(mv.to) + ' pins the ' + xn + ' on ' + alg(i.x) + ' to the ' + yn + ' behind it' + (i.yt === KING ? ' (an absolute pin: the pinned piece may not move at all)' : ' (if the ' + xn + ' moves, the ' + yn + ' is captured)') + '. ' + (r.mated ? 'It even leads to checkmate.' : 'White comes out about ' + r.gain + ' points of material ahead.');
+    else explain = 'The ' + pn + ' on ' + alg(mv.to) + ' skewers the ' + xn + ' on ' + alg(i.x) + ': once the ' + xn + ' steps aside, the ' + yn + ' behind it falls. ' + (r.mated ? 'It even leads to checkmate.' : 'White comes out about ' + r.gain + ' points of material ahead.');
+    return { type: kind, diff, pos: posOf(g), good: uniq(g.legalMoves().filter((m) => m.from === mv.from && m.to === mv.to)).map(plain), explain, san: sanOf(g, mv) };
+  }
+
+  /** Hanging piece: one Black piece is attacked and not protected, while other captures are traps. */
+  function tryHanging(diff, level) {
+    const n = diff === 'easy' ? 4 + rnd(2) : 4 + rnd(3);
+    const white = pickN(BEST_POOL, n), black = pickN(BEST_POOL, n);
+    const g = randomPosition({ white, black, edge: false });
+    if (!g || !g.hasLegalMove() || g.inCheck(BLACK)) return null;
+    const top = bestAt(g, 3);
+    if (!top.move) return null;
+    const tv = g.board[top.move.to];
+    if (!tv || (tv & 7) === KING || (tv & 7) === PAWN) return null;
+    if (g.attacked(top.move.to, BLACK)) return null;            // protected: not hanging
+    if (top.score > MATE - 100) return null;
+    const now = evalSide(g);
+    if (top.score - now < (diff === 'easy' ? 250 : 280)) return null;
+    // the free piece must be the only free piece, and the other captures have to be traps (normal and hard)
+    let traps = 0, frees = 0;
+    for (const m of g.legalMoves()) {
+      const v = g.board[m.to];
+      if (!v || m.promo) continue;
+      if (!g.attacked(m.to, BLACK)) { if (PV[v & 7] >= 300 || (v & 7) === QUEEN) frees++; }
+      else if (PV[v & 7] < PV[g.board[m.from] & 7]) traps++;
+    }
+    if (frees !== 1) return null;
+    if (level === 0 && diff === 'normal' && traps < 1) return null;
+    if (level === 0 && diff === 'hard' && traps < 1) return null;
+    if (rivalWithin(g, top.move, top.score, 3, level >= 1 ? 90 : 140)) return null;
+    // Black must not be threatening something bigger (it keeps the puzzle about the hanging piece)
+    const name = PNAME[tv & 7];
+    const explain = 'The ' + name + ' on ' + alg(top.move.to) + ' is attacked and nothing protects it, so White simply takes it for free.' + (traps ? ' The tempting captures elsewhere are protected, so taking them loses material.' : '');
+    return { type: 'hanging', diff, pos: posOf(g), good: uniq(g.legalMoves().filter((m) => m.from === top.move.from && m.to === top.move.to)).map(plain), explain, san: sanOf(g, top.move) };
+  }
+
+  /** Trapped piece: a quiet move attacks a piece that has no safe square, so it cannot be saved. */
+  function tryTrapped(diff, level) {
+    const T = pick(diff === 'easy' ? [KNIGHT, BISHOP, ROOK] : [KNIGHT, KNIGHT, BISHOP, BISHOP, ROOK, QUEEN]);
+    const rim = SQUARES.filter((s) => fileOf(s) === 0 || fileOf(s) === 7 || rankOf(s) === 7 || (T === BISHOP && rankOf(s) === 6 && (fileOf(s) === 0 || fileOf(s) === 7)));
+    const ts = pick(rim);
+    const g = blank();
+    g.board[ts] = BLACK | T;
+    const used = new Set([ts]);
+    if (!kingsIn(g, used)) return null;
+    // Black pieces and pawns crowd around the target, White pieces come from far away
+    for (let i = 0; i < 2 + rnd(3); i++) {
+      const cands = SQUARES.filter((s) => !used.has(s) && !g.board[s] && dist(s, ts) <= 2);
+      if (!cands.length) break;
+      const s = pick(cands), ty = pick([PAWN, PAWN, PAWN, KNIGHT, BISHOP]);
+      if (ty === PAWN && (rankOf(s) === 0 || rankOf(s) === 7)) continue;
+      g.board[s] = BLACK | ty; used.add(s);
+    }
+    if (!sprinkle(g, used, WHITE, [ROOK, BISHOP, KNIGHT, PAWN, QUEEN, ROOK], 2 + rnd(diff === 'easy' ? 2 : 3))) return null;
+    if (!sprinkle(g, used, BLACK, [PAWN, KNIGHT, BISHOP], rnd(2))) return null;
+    const patt = (gg, m) => {
+      if (gg.board[m.to] || m.promo) return null;
+      gg.makeMove(m);
+      let out = null;
+      try {
+        if (!gg.inCheck(BLACK)) {
+          const cand = [];
+          for (const s of SQUARES) {
+            const p = gg.board[s];
+            if (!p || (p & 24) !== BLACK || (p & 7) === KING || (p & 7) === PAWN || PV[p & 7] < 300) continue;
+            if (!gg.attacked(s, WHITE)) continue;
+            cand.push(s);
+          }
+          if (cand.length === 1) {
+            const s = cand[0];
+            const mob = gg.legalMoves().filter((x) => x.from === s).length;
+            if (mob <= 4) out = { sq: s, ty: gg.board[s] & 7, mob };
+          }
+        }
+      } catch (e) { out = null; }
+      gg.unmakeMove();
+      return out;
+    };
+    const r = proveOne(g, diff, level, 'trapped', patt, { easy: 250, normal: 250, hard: 280 });
+    if (!r) return null;
+    if (r.top.score - r.now < PV[r.info.ty] - 140 && !r.mated) return null;
+    const mv = r.top.move;
+    const explain = 'The move to ' + alg(mv.to) + ' attacks the ' + PNAME[r.info.ty] + ' on ' + alg(r.info.sq) + ', and every square it could run to is covered or blocked. It is trapped, so White wins it. White comes out about ' + r.gain + ' points of material ahead.';
+    return { type: 'trapped', diff, pos: posOf(g), good: uniq(g.legalMoves().filter((m) => m.from === mv.from && m.to === mv.to)).map(plain), explain, san: sanOf(g, mv) };
+  }
+
+  /** Under-promotion: promoting to a queen throws away the win (stalemate or a missed tactic), another piece wins. */
+  function tryUnder(diff, level) {
+    const g = blank();
+    const f = rnd(8);
+    const ps = sq(f, 6);
+    g.board[ps] = WHITE | PAWN;
+    const used = new Set([ps, ps + 16]);
+    const bk = (() => { const c = SQUARES.filter((s) => !used.has(s) && dist(s, ps + 16) <= 3 && rankOf(s) >= 5); return c.length ? pick(c) : -1; })();
+    if (bk < 0) return null;
+    g.board[bk] = BLACK | KING; used.add(bk);
+    if (!kingsIn(g, used, bk)) return null;
+    const bp = pickN([ROOK, QUEEN, BISHOP, KNIGHT, PAWN, PAWN], rnd(3));
+    for (const ty of bp) {
+      const c = SQUARES.filter((s) => !used.has(s) && !g.board[s] && (ty !== PAWN || (rankOf(s) > 0 && rankOf(s) < 7)));
+      if (!c.length) return null;
+      const s = pick(c); g.board[s] = BLACK | ty; used.add(s);
+    }
+    if (rnd(2)) sprinkle(g, used, WHITE, [ROOK, BISHOP, KNIGHT, PAWN], 1 + rnd(2));
+    if (g.inCheck(BLACK) || g.inCheck(WHITE) || !g.hasLegalMove()) return null;
+    let best = null, bs = -INF, qs2 = -INF, second = -INF;
+    const scored = [];
+    for (const m of g.legalMoves()) {
+      g.makeMove(m);
+      const sc = -nega(g, 2, -INF, INF, 1);
+      g.unmakeMove();
+      scored.push([m, sc]);
+    }
+    for (const [m, sc] of scored) { if (sc > bs) { second = bs; bs = sc; best = m; } else if (sc > second) second = sc; if (m.promo === QUEEN && m.from === ps) qs2 = Math.max(qs2, sc); }
+    if (!best || best.from !== ps || !best.promo || best.promo === QUEEN) return null;
+    if (bs - second < (level >= 1 ? 80 : 120)) return null;                 // nothing else comes close (the queen promotion included)
+    const now = evalSide(g);
+    if (bs - now < 150 && bs < MATE - 100) return null;
+    if (bs - qs2 < 150) return null;
+    const why = bs === 0 ? '' : '';
+    const pn = PNAME[best.promo];
+    const reason = best.promo === KNIGHT ? 'A knight can give check or fork pieces in a way a queen cannot, and a queen on that square would let Black off the hook (or even be stalemate).' : 'Promoting to a queen would ' + (qs2 <= 0 ? 'stalemate Black or throw the win away' : 'be worse here') + ', while the ' + pn + ' keeps the win.';
+    return { type: 'underpromo', diff, pos: posOf(g), good: [plain(best)], explain: 'Promote to a ' + pn + ', not a queen. ' + reason, san: sanOf(g, best) };
+  }
+
+  /** Back-rank mate: the king is shut in by its own pawns and a rook or queen mates on the first rank (in 1, or in 2 after removing a guard). */
+  function tryBackRank(diff, level) {
+    const n = diff === 'easy' ? 1 : (Math.random() < 0.35 ? 1 : 2);
+    const g = blank();
+    const kf = pick([0, 1, 1, 2, 5, 6, 6, 7]);
+    const bk = sq(kf, 7);
+    g.board[bk] = BLACK | KING;
+    const used = new Set([bk]);
+    for (const df of [-1, 0, 1]) {
+      const f = kf + df;
+      if (f < 0 || f > 7) continue;
+      const s = sq(f, 6);
+      if (Math.random() < 0.8) g.board[s] = BLACK | PAWN; else if (Math.random() < 0.5) g.board[s] = BLACK | pick([BISHOP, KNIGHT]);
+      if (g.board[s]) used.add(s);
+    }
+    // a Black guard on the back rank (rook, bishop, knight) makes it a puzzle for normal and hard
+    const guard = n === 2 || (diff !== 'easy' && Math.random() < 0.4);
+    if (guard) {
+      const c = SQUARES.filter((s) => rankOf(s) === 7 && !used.has(s) && dist(s, bk) >= 2);
+      if (c.length) { const s = pick(c); g.board[s] = BLACK | pick([ROOK, ROOK, KNIGHT, BISHOP, QUEEN]); used.add(s); }
+    }
+    const wk = (() => { for (let i = 0; i < 40; i++) { const x = pick(SQUARES); if (!used.has(x) && rankOf(x) < 5 && dist(x, bk) >= 2) return x; } return -1; })();
+    if (wk < 0) return null;
+    g.board[wk] = WHITE | KING; used.add(wk);
+    const heavy = [pick([ROOK, ROOK, QUEEN]), n === 2 ? pick([ROOK, QUEEN]) : pick([BISHOP, KNIGHT, PAWN, ROOK])];
+    for (const ty of heavy) {
+      const c = SQUARES.filter((s) => !used.has(s) && rankOf(s) < 7 && (ty !== PAWN || rankOf(s) > 0));
+      const s = pick(c); g.board[s] = WHITE | ty; used.add(s);
+    }
+    if (!sprinkle(g, used, WHITE, [PAWN, KNIGHT, BISHOP], rnd(3))) return null;
+    if (!sprinkle(g, used, BLACK, [PAWN, PAWN, KNIGHT], rnd(3))) return null;
+    if (g.inCheck(BLACK) || g.inCheck(WHITE) || !g.hasLegalMove()) return null;
+    const isBR = (gg, m) => {                                   // m mates, the mating piece is a rook or queen on the back rank
+      const p = gg.board[m.from] & 7;
+      return (p === ROOK || p === QUEEN) && rankOf(m.to) === 7 && rankOf(bk) === 7;
+    };
+    if (n === 1) {
+      const mates = uniq(mateMoves(g));
+      if (!mates.length || mates.length > 2) return null;
+      if (!mates.every((m) => isBR(g, m))) return null;
+      if (level === 0 && diff === 'easy' && mates.length > 1) return null;
+      return { type: 'backrank', diff, pos: posOf(g), good: mates.map(plain), explain: 'Back-rank mate: the king is boxed in by its own pieces, so a rook or queen on the first rank gives a check it cannot escape. Checkmate!', san: sanOf(g, mates[0]) };
+    }
+    setBudget(60000);
+    if (mateMoves(g, true).length) return null;
+    const firsts = mateFirsts(g, 2, false);
+    if (!firsts || !firsts.length || firsts.length > 2) return null;
+    // check the pattern: after the first move and every reply, the mate is a back-rank mate
+    const m1 = firsts[0];
+    g.makeMove(m1);
+    let ok = true;
+    for (const r of g.legalMoves()) {
+      g.makeMove(r);
+      const mm = mateMoves(g);
+      g.unmakeMove();
+      if (!mm.length) { ok = false; break; }
+      g.makeMove(r);
+      const good = mm.some((x) => isBR(g, x));
+      g.unmakeMove();
+      if (!good) { ok = false; break; }
+    }
+    g.unmakeMove();
+    if (!ok) return null;
+    return { type: 'backrank', diff, pos: posOf(g), good: firsts.map(plain), explain: 'Back-rank mate in 2: ' + sanOf(g, m1) + ' removes or lures away the piece guarding the first rank (or forces matters), and the rook or queen then mates on the back rank because the king has no escape squares.', san: sanOf(g, m1) };
+  }
+
+  /** Scholar's mate: 1.e4 ... 2.Bc4 / Qh5 and the move that wins at once is Qxf7#. */
+  function tryScholar(diff, level) {
+    const g = new Chess();
+    g.mode = 'basic';
+    const play = (from, to) => { const m = g.legalMoves().find((x) => x.from === from && x.to === to); if (!m) return false; g.makeMove(m); return true; };
+    const S = (name) => { const f = name.charCodeAt(0) - 97, r = name.charCodeAt(1) - 49; return sq(f, r); };
+    const order = Math.random() < 0.5 ? [['e2', 'e4'], ['f1', 'c4'], ['d1', 'h5']] : [['e2', 'e4'], ['d1', 'h5'], ['f1', 'c4']];
+    const extraW = diff === 'easy' ? [] : diff === 'normal' ? [['g1', 'f3'], ['d2', 'd3'], ['b1', 'c3']] : [['g1', 'f3'], ['d2', 'd3'], ['b1', 'c3'], ['c2', 'c3'], ['h2', 'h3']];
+    const wPlan = order.slice();
+    // extras are fitted in before the last move when they do not disturb the scholar's diagonals
+    for (const e of extraW) if (Math.random() < 0.4 && wPlan.length < 3 + (diff === 'hard' ? 3 : 2)) wPlan.splice(1 + rnd(wPlan.length - 1), 0, e);
+    // Black plays random developing moves (never one that guards f7 or traps the plan)
+    for (let i = 0; i < wPlan.length; i++) {
+      const [a, b] = wPlan[i];
+      if (g.turn !== WHITE) return null;
+      if (!play(S(a), S(b))) return null;
+      if (i === wPlan.length - 1) break;
+      const pool = g.legalMoves().filter((m) => {
+        const t = g.board[m.from] & 7;
+        if (t === KING || t === ROOK) return false;
+        if (t === QUEEN && Math.random() < 0.7) return false;
+        return true;
+      });
+      if (!pool.length) return null;
+      g.makeMove(pick(pool));
+    }
+    // last Black move
+    const pool2 = g.legalMoves().filter((m) => (g.board[m.from] & 7) !== KING && !((g.board[m.from] & 7) === ROOK));
+    if (!pool2.length) return null;
+    const bm = pick(pool2);
+    g.makeMove(bm);
+    if (g.turn !== WHITE || g.inCheck(WHITE) || !g.hasLegalMove()) return null;
+    const mates = uniq(mateMoves(g));
+    if (mates.length !== 1) return null;
+    const m = mates[0];
+    if (m.to !== S('f7') || (g.board[m.from] & 7) !== QUEEN) return null;
+    if (g.board[S('c4')] !== (WHITE | BISHOP)) return null;
+    // keep the position clean: White must not have been captured, Black's pieces all still natural
+    const tail = diff === 'easy' ? 'The queen takes the f7 pawn, the bishop on c4 protects her, and the king has nowhere to go.' : 'Qxf7 is protected by the bishop on c4, so the king cannot take, and every flight square is covered.';
+    return { type: 'scholar', diff, pos: posOf(g), good: [plain(m)], explain: 'Scholar\'s mate! ' + tail, san: sanOf(g, m) };
+  }
+
+  /** Endgame practice: few pieces, one precise move wins material or the game. */
+  function tryEndgame(diff, level) {
+    const W = pick([[PAWN], [PAWN, PAWN], [PAWN, PAWN], [ROOK], [ROOK, PAWN], [BISHOP, PAWN], [KNIGHT, PAWN], [ROOK, ROOK], [QUEEN], [QUEEN, PAWN]]);
+    const B = pick([[], [PAWN], [PAWN], [PAWN, PAWN], [ROOK], [BISHOP], [KNIGHT], [PAWN, PAWN, PAWN]]);
+    if (diff === 'easy' && W.length > 2) return null;
+    const g = blank();
+    const used = new Set();
+    const bk = pick(SQUARES); g.board[bk] = BLACK | KING; used.add(bk);
+    if (!kingsIn(g, used, bk)) return null;
+    const put = (col, ty) => {
+      for (let i = 0; i < 40; i++) {
+        const s = pick(SQUARES);
+        if (used.has(s) || g.board[s]) continue;
+        const r = rankOf(s);
+        if (ty === PAWN) {
+          if (r === 0 || r === 7) continue;
+          if (col === WHITE && r < 3) continue;
+          if (col === BLACK && r > 4) continue;
+        }
+        g.board[s] = col | ty; used.add(s); return true;
+      }
+      return false;
+    };
+    for (const ty of W) if (!put(WHITE, ty)) return null;
+    for (const ty of B) if (!put(BLACK, ty)) return null;
+    if (g.inCheck(BLACK) || g.inCheck(WHITE) || !g.hasLegalMove()) return null;
+    const D = diff === 'hard' ? 5 : 4;
+    const all = [];
+    for (const x of g.legalMoves()) { g.makeMove(x); const sc = -nega(g, D - 1, -INF, INF, 1); g.unmakeMove(); all.push([x, sc]); }
+    all.sort((a, b) => b[1] - a[1]);
+    const bs = all[0][1];
+    const winners = all.filter((a) => a[1] >= bs - 20);                       // equally good ways of doing the same job
+    const rest = all.find((a) => a[1] < bs - 20);
+    const mated = bs > MATE - 100;
+    const now = evalSide(g);
+    if (!mated && bs - now < (diff === 'easy' ? 100 : 150)) return null;
+    if (winners.length > (level >= 1 ? 4 : 3)) return null;
+    if (!rest || bs - rest[1] < (level >= 1 ? 80 : 110)) return null;
+    const top = { move: winners[0][0], score: bs };
+    // hard: a quick look must not find it
+    if (diff !== 'easy' && level < 1) { const sh = bestAt(g, 1).move; if (sh && winners.some((w) => w[0].from === sh.from && w[0].to === sh.to)) return null; }
+    if (diff === 'easy' && level < 1) { const sh = bestAt(g, 1).move; if (!sh || !winners.some((w) => w[0].from === sh.from && w[0].to === sh.to)) return null; }
+    const m = top.move;
+    const how = m.promo ? 'It promotes the pawn.' : g.board[m.to] ? 'It wins material.' : (g.board[m.from] & 7) === PAWN ? 'The pawn pushes ahead and cannot be stopped.' : (g.board[m.from] & 7) === KING ? 'King activity decides the endgame here: the king steps to the key square.' : 'Every other move lets the advantage slip.';
+    const explain = 'Endgame technique: ' + how + (mated ? ' It leads to checkmate.' : ' White comes out about ' + Math.max(1, Math.round((top.score - now) / 100)) + ' points ahead.');
+    return { type: 'endgame', diff, pos: posOf(g), good: winners.map((w) => plain(w[0])), explain, san: sanOf(g, m) };
+  }
+
   /* -------------------------------------------------------------- helpers */
   function sanOf(g, m) {
     let san = g.moveToSan(m);
@@ -802,6 +1209,7 @@
 
   /** Time-sliced generation. onDone(puzzle). Loosens the rules the longer it takes so it always ends. n = wanted mate length. */
   function make(type, diff, onDone, nWant) {
+    if (window.__aiResetStyle) window.__aiResetStyle();   // (a bot style must never leak into puzzle searches)
     const t0 = Date.now();
     if (type === 'mate') { const b = fromBank(diff, nWant || (diff === 'easy' ? 1 : diff === 'normal' ? 2 : 3)); if (b) { setTimeout(() => onDone(b), 0); return; } }
     const gd = diff === 'insane' ? 'hard' : diff;
@@ -818,6 +1226,13 @@
           p = type === 'mate' ? tryMate(gd, n, level)
             : type === 'check' ? tryCheck(gd, level)
             : type === 'fork' ? tryFork(gd, level, age < 2500 ? forkWant : undefined)
+            : type === 'pin' || type === 'skewer' ? tryLine(type, gd, level)
+            : type === 'hanging' ? tryHanging(gd, level)
+            : type === 'trapped' ? tryTrapped(gd, level)
+            : type === 'underpromo' ? tryUnder(gd, level)
+            : type === 'backrank' ? tryBackRank(gd, level)
+            : type === 'scholar' ? tryScholar(gd, level)
+            : type === 'endgame' ? tryEndgame(gd, level)
             : type === 'sac' ? (gd !== 'easy' && Math.random() < 0.85 ? trySacMate(gd, level) : trySac(gd, level))
             : tryBest(gd, level);
         } catch (e) { p = null; }
@@ -828,5 +1243,5 @@
     setTimeout(step, 0);
   }
 
-  root.PuzzleGen = { enc, dec, toughest, treeOf, treeDepth, setBudget, isBlown: () => blown, setHorizon: (v) => { horizon = v; }, nega, qs, bestAt, rivalWithin, evalSide, MATE, make, fromPos, posOf, blank, isMate, mateMoves, forcedMate2, mateFirsts, canMate, forcedWithin, findMateMove, bestDefence, isCapture, checkPath, isSafeCheck, sanPath, sanOf, tryMate, tryCheck, tryBest, tryFork, trySac, trySacMate, uniq };
+  root.PuzzleGen = { enc, dec, toughest, treeOf, treeDepth, setBudget, isBlown: () => blown, setHorizon: (v) => { horizon = v; }, nega, qs, bestAt, rivalWithin, evalSide, MATE, make, fromPos, posOf, blank, isMate, mateMoves, forcedMate2, mateFirsts, canMate, forcedWithin, findMateMove, bestDefence, isCapture, checkPath, isSafeCheck, sanPath, sanOf, tryMate, tryCheck, tryBest, tryFork, tryLine, tryHanging, tryTrapped, tryUnder, tryBackRank, tryScholar, tryEndgame, trySac, trySacMate, uniq };
 })();

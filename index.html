@@ -10,9 +10,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
   <link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
-  <link rel="stylesheet" href="styles.css?v=58">
-  <link rel="preconnect" href="https://script.google.com">
-  <link rel="preconnect" href="https://script.googleusercontent.com">
+  <link rel="stylesheet" href="styles.css?v=64">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- Carlito is the open Calibri look-alike, used when Calibri isn't installed -->
@@ -23,6 +21,7 @@
 
     <!-- MENU -->
     <section id="menu" class="page active">
+      <button id="on-tab" class="on-tab off" aria-label="Online players"><span class="on-dot" aria-hidden="true"></span><span id="on-count">Online</span></button>
       <div class="menu-top">
         <button id="settings-btn" class="icon-btn" aria-label="Settings" title="Settings">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -203,6 +202,14 @@
             </span>
             <span class="mode-go" aria-hidden="true">&rsaquo;</span>
           </button>
+          <button class="mode" data-mode="community" style="--accent:#7cc7ff">
+            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="9" r="2.4"/><path d="M16.5 14.2c2.7-.3 4.9 1.7 4.9 4.8"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Community Puzzles</span>
+              <span class="mode-desc">Puzzles made by players. Build and publish your own.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
           <button class="mode" data-mode="puzzlerush" style="--accent:#ff8a3d">
             <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg></span>
             <span class="mode-text">
@@ -272,7 +279,7 @@
           </div></div>
         </section>
         <section class="mgrp closed" data-g="progress">
-          <button class="mgrp-h" type="button" aria-expanded="false"><span class="mgrp-t">Progress</span><span class="mgrp-s">Stats and records</span><i class="mgrp-chev" aria-hidden="true"></i></button>
+          <button class="mgrp-h" type="button" aria-expanded="false"><span class="mgrp-t">Progress</span><span class="mgrp-s">Stats and ratings</span><i class="mgrp-chev" aria-hidden="true"></i></button>
           <div class="mgrp-b"><div class="modes">
           <button class="mode" data-mode="board" style="--accent:#e8c14a">
             <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V11M12 21V4M19 21v-7"/></svg></span>
@@ -395,17 +402,21 @@
             <button id="arr-ok" class="btn primary">Done</button>
           </div>
 
+          <div id="presence" class="presence hidden" role="status"></div>
+          <div id="react-bar" class="react-bar hidden" aria-label="React to the game"><span>React</span><button type="button" data-rx="0" aria-label="React 0">👍</button><button type="button" data-rx="1" aria-label="React 1">🤝</button><button type="button" data-rx="2" aria-label="React 2">😮</button><button type="button" data-rx="3" aria-label="React 3">😅</button><button type="button" data-rx="4" aria-label="React 4">🔥</button><button type="button" data-rx="5" aria-label="React 5">😂</button><em id="react-them"></em></div>
           <!-- live game controls -->
           <div id="controls" class="controls">
             <button id="flip-btn" class="btn">Flip</button>
             <button id="queen-btn" class="btn hidden" aria-pressed="false">Show queen</button>
             <button id="undo-btn" class="btn">Undo</button>
             <button id="redo-btn" class="btn">Redo</button>
+            <button id="live-btn" class="btn live-btn hidden">Live</button>
             <button id="hint-btn" class="btn hidden">Hint</button>
             <button id="pause-btn" class="btn hidden">Pause</button>
             <button id="both-btn" class="btn hidden" aria-pressed="false">Both sides</button>
             <button id="forfeit-btn" class="btn hidden">Forfeit</button>
         <button id="draw-btn" class="btn hidden">Offer draw</button>
+            <button id="oundo-btn" class="btn hidden">Ask to undo</button>
             <button id="save-btn" class="btn hidden">Save Sandbox</button>
             <button id="reset-btn" class="btn">New game</button>
           </div>
@@ -422,7 +433,7 @@
               <button id="rp-speed" class="btn speed" aria-label="Speed">1x</button>
               <span id="rp-time" class="rp-time dim hidden"></span>
             </div>
-            <div class="replay-row"><button id="rp-export" class="btn" aria-label="Export the board position (pause first)">Export board</button></div>
+            <div class="replay-row"><button id="rp-export" class="btn" aria-label="Export the board position (pause first)">Export board</button><button id="rp-flip" class="btn hidden" aria-label="Flip the board">Flip board</button></div>
             <button id="rp-exit" class="btn wide">Close replay</button>
           </div>
         </div>
@@ -671,40 +682,50 @@
   </div>
 
   <script src="chess.js?v=31"></script>
-  <script src="book.js?v=1"></script>
+  <script src="book.js?v=3"></script>
   <script src="guessq.js?v=1"></script>
-  <script src="ai.js?v=41"></script>
+  <script src="ai.js?v=45"></script>
   <script src="guessbot.js?v=4"></script>
-  <script src="app.js?v=46"></script>
+  <script src="app.js?v=54"></script>
+  <script src="stockfish-bridge.js?v=1"></script>
+  <script src="botstyles.js?v=1"></script>
   <script src="export.js?v=2"></script>
-  <script src="prefs.js?v=1"></script>
+  <script src="prefs.js?v=3"></script>
   <script src="history.js?v=8"></script>
   <script src="saves.js?v=6"></script>
   <script src="leaderboard.js?v=33"></script>
-  <script src="profile.js?v=26"></script>
+  <script src="profile.js?v=29"></script>
   <script src="hats.js?v=2"></script>
-  <script src="shop.js?v=38"></script>
-    <script src="stats.js?v=36"></script>
+  <script src="shop.js?v=41"></script>
+  <script src="upgrades.js?v=2"></script>
+    <script src="stats.js?v=38"></script>
   <script src="rush.js?v=25"></script>
-  <script src="puzzlegen.js?v=33"></script>
+  <script src="puzzlegen.js?v=36"></script>
   <script src="puzzlebank.js?v=3"></script>
-  <script src="ratings.js?v=32"></script>
-  <script src="puzzles.js?v=37"></script>
-  <script src="popular.js?v=3"></script>
+  <script src="ratings.js?v=35"></script>
+  <script src="puzzles.js?v=41"></script>
+  <script src="popular.js?v=4"></script>
   <script src="drag.js?v=1"></script>
+  <script src="evalbar.js?v=2"></script>
   <script src="solocore.js?v=1"></script>
   <script src="solo.js?v=2"></script>
-  <script src="analyzecore.js?v=1"></script>
+  <script src="analyzecore.js?v=2"></script>
   <script src="explain.js?v=1"></script>
-  <script src="analyze.js?v=9"></script>
-  <script src="editor.js?v=3"></script>
+  <script src="analyze.js?v=15"></script>
+  <script src="editor.js?v=4"></script>
+  <script src="community.js?v=2"></script>
   <script src="mods.js?v=5"></script>
-  <script src="online-config.js?v=1"></script>
-  <script src="online.js?v=2"></script>
-  <script src="globalboard.js?v=4"></script>
-  <script src="puzzlerush.js?v=4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="supabase-config.js?v=1"></script>
+  <script src="online.js?v=7"></script>
+  <script src="globalboard.js?v=6"></script>
+  <script src="players.js?v=4"></script>
+  <script src="spectate.js?v=1"></script>
+  <script src="feedback.js?v=1"></script>
+  <script src="puzzlerush.js?v=10"></script>
+  <script src="challenge.js?v=1"></script>
   <script src="hockey.js?v=10"></script>
-  <script src="tutorial.js?v=8"></script>
+  <script src="tutorial.js?v=9"></script>
   <script src="extras.js?v=18"></script>
   <script src="menu.js?v=3"></script>
 </body>

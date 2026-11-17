@@ -224,12 +224,12 @@
     if (loss <= 0.008) {
       if (bigSac && wP >= 0.42 && f.before < 500) r = RATINGS.brilliant;
       else if (top && gap >= 0.13 && wB >= 0.3 && wB < 0.97 && A.legal > 2 && !f.captured) r = RATINGS.great;
-      else if (top && gap >= 0.035) r = RATINGS.best;
+      else if (top) r = RATINGS.best;                              // the engine's own choice is always Best (it used to need to stand out from the next move)
     } else if (loss <= 0.07 && sac && wP >= 0.38 && !f.captured) r = RATINGS.interesting;
-    else if (loss <= 0.03 && gap >= 0.035) r = RATINGS.good;
-    else if (loss <= 0.07) r = null;
-    else if (loss <= 0.14) r = RATINGS.inaccuracy;
-    else if (loss <= 0.25) r = RATINGS.mistake;
+    else if (loss <= 0.03) r = RATINGS.good;
+    else if (loss <= 0.05) r = null;
+    else if (loss <= 0.10) r = RATINGS.inaccuracy;                 // win chance given away: 5% inaccuracy, 10% mistake, 20% blunder
+    else if (loss <= 0.20) r = RATINGS.mistake;
     else r = RATINGS.blunder;
 
     // first departure from known theory is a novelty when the move is still sound
@@ -382,5 +382,5 @@
   }
   const iconHtml = (x) => (x.hasImg ? `<img class="ri" src="${x.img}" alt="${x.label}">` : x.sym.replace(/&/g, '&amp;').replace(/</g, '&lt;'));
 
-  window.MoveRating = { rate, polish, sacOrder, clone, iconHtml, openingName, isBook, analyse, wp, MATE, RATINGS, get: (id) => RATINGS[id] || null };
+  window.MoveRating = { facts, classify, bookOf, rate, polish, sacOrder, clone, iconHtml, openingName, isBook, analyse, wp, MATE, RATINGS, get: (id) => RATINGS[id] || null };
 })();

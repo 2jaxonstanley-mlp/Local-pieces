@@ -103,7 +103,7 @@
       if (r.forced || r.isMate || !r.top || !r.top.length) return;
       const loss = wpLoss(r.bestScore, r.playedScore);
       const mateish = Math.abs(r.bestScore) > MATE - 200 || Math.abs(r.playedScore) > MATE - 200;
-      if ((id && VERIFY[id]) || loss >= 0.035 || (mateish && !(id === 'book'))) flagged.push(+k);
+      if ((id && VERIFY[id]) || loss >= 0.03 || (mateish && !(id === 'book'))) flagged.push(+k);
     });
     const F = Math.max(1, flagged.length);
     const remaining = Math.max(2500, budget - (now() - t0) - 800);

@@ -256,6 +256,13 @@
     puzzle:  { ev: 'puzzle',  text: (n) => 'Solve ' + n + ' puzzles', opts: [[2, 1], [4, 2]], ic: '\u{1F9E9}', col: '#f58a2d' },
     rush:    { ev: 'rush',    text: (n) => 'Finish ' + n + (n === 1 ? ' Capture Rush round' : ' Capture Rush rounds'), opts: [[1, 1], [2, 2]], ic: '⏱️', col: '#ff9a4d' },
     secret:  { ev: 'secret',  text: (n) => 'Play ' + n + ' Secret Queen game', opts: [[1, 2]], ic: IC(2), col: '#b48cf2' },
+    forkpz:  { ev: 'pz_fork',  text: (n) => 'Solve ' + n + ' fork puzzles', opts: [[2, 1], [3, 2]], ic: '\u{1F374}', col: '#f58a2d' },
+    tacticpz:{ ev: 'pz_tactic',text: (n) => 'Solve ' + n + ' pin, skewer, hanging-piece or trapped-piece puzzles', opts: [[3, 1], [5, 2]], ic: '\u{1F4CC}', col: '#e5a04a' },
+    onplay:  { ev: 'onlinegame', text: (n) => 'Play ' + n + (n === 1 ? ' online game' : ' online games'), opts: [[1, 1], [2, 2]], ic: '\u{1F310}', col: '#5ab0ff' },
+    onwin:   { ev: 'onlinewin', text: (n) => 'Win ' + n + ' online game', opts: [[1, 3]], ic: '\u{1F947}', col: '#f2c45a' },
+    analyze: { ev: 'analyzed', text: (n) => 'Analyse ' + n + ' game', opts: [[1, 1]], ic: '\u{1F50D}', col: '#7fd1c4' },
+    commpz:  { ev: 'community', text: (n) => 'Solve ' + n + ' Community ' + (n === 1 ? 'puzzle' : 'puzzles'), opts: [[1, 1], [2, 2]], ic: '\u{1F465}', col: '#b48cf2' },
+    rushpts: { ev: 'rushpts', text: (n) => 'Score ' + n + ' points in Puzzle Rush', opts: [[5, 1], [10, 2]], ic: '\u{26A1}', col: '#ff9a4d' },
   };
   /* weekly quests: bigger goals, each pays 5 to 8 tokens */
   const WDEFS = {
@@ -265,6 +272,14 @@
     puzzle:  { ev: 'puzzle',  text: (n) => 'Solve ' + n + ' puzzles', opts: [[12, 5], [20, 7]], ic: '\u{1F9E9}', col: '#f58a2d' },
     rush:    { ev: 'rush',    text: (n) => 'Finish ' + n + ' Capture Rush rounds', opts: [[4, 5], [6, 6]], ic: '⏱️', col: '#ff9a4d' },
     secret:  { ev: 'secret',  text: (n) => 'Play ' + n + ' Secret Queen games', opts: [[3, 6]], ic: IC(2), col: '#b48cf2' },
+    forkpz:  { ev: 'pz_fork',  text: (n) => 'Solve ' + n + ' fork puzzles', opts: [[10, 5], [15, 7]], ic: '\u{1F374}', col: '#f58a2d' },
+    matepz:  { ev: 'pz_mate',  text: (n) => 'Solve ' + n + ' checkmate puzzles', opts: [[10, 5], [15, 7]], ic: '\u{265A}', col: '#ff6b6b' },
+    tacticpz:{ ev: 'pz_tactic',text: (n) => 'Solve ' + n + ' pin, skewer, hanging-piece or trapped-piece puzzles', opts: [[15, 6], [25, 8]], ic: '\u{1F4CC}', col: '#e5a04a' },
+    onplay:  { ev: 'onlinegame', text: (n) => 'Play ' + n + ' online games', opts: [[5, 5]], ic: '\u{1F310}', col: '#5ab0ff' },
+    onwin:   { ev: 'onlinewin', text: (n) => 'Win ' + n + ' online games', opts: [[3, 7], [5, 8]], ic: '\u{1F947}', col: '#f2c45a' },
+    analyze: { ev: 'analyzed', text: (n) => 'Analyse ' + n + ' games', opts: [[3, 5]], ic: '\u{1F50D}', col: '#7fd1c4' },
+    commpz:  { ev: 'community', text: (n) => 'Solve ' + n + ' Community puzzles', opts: [[5, 6]], ic: '\u{1F465}', col: '#b48cf2' },
+    rushpts: { ev: 'rushpts', text: (n) => 'Score ' + n + ' points in Puzzle Rush (all runs)', opts: [[30, 6], [50, 8]], ic: '\u{26A1}', col: '#ff9a4d' },
     hardwin: { ev: 'hardwin', text: (n) => 'Beat Hard or tougher ' + n + (n === 1 ? ' time' : ' times'), opts: [[2, 8], [3, 8]], ic: '\u{1F525}', col: '#ff6b6b' },
     streak:  { ev: 'cleanpuzzle', text: (n) => 'Solve ' + n + ' puzzles without a miss', opts: [[8, 7]], ic: '\u{1F3AF}', col: '#5ab0ff' },
   };
@@ -304,7 +319,7 @@
   ['capture', 'wins', 'puzzles'].forEach((k) => { E[k] = Object.assign({ lv: 1, p: 0, done: 0 }, E[k] || {}); });
   const eTarget = (k, lv) => ENDLESS[k].base * lv;
   const eReward = (k, lv) => 1 + Math.floor(lv / 4);
-  const MEDIUM_UP = { medium: 1, hard: 1, insane: 1, godly: 1 };
+  const MEDIUM_UP = { medium: 1, hard: 1, insane: 1, godly: 1, brilliant: 1, patricia: 1, stockfish: 1 };
   function endlessTick(k, n) {
     const e = E[k];
     e.p += n;
@@ -337,7 +352,7 @@
     refresh();
   }
 
-  const HARD = { hard: 1, godly: 1, insane: 1 };
+  const HARD = { hard: 1, godly: 1, insane: 1, brilliant: 1, patricia: 1, stockfish: 1 };
   /** Called by the games: 'game' {mode, won, level...}, 'capture' n, 'puzzle', 'rush'. */
   function event(name, p) {
     if (LP.stats && LP.stats.event) LP.stats.event(name, p);
@@ -347,6 +362,11 @@
       if (p && p.mode === 'secret') tick('secret', 1);
     } else {
       tick(name, typeof p === 'number' ? p : 1);
+      if (name === 'puzzle' && p) {   // which kind of puzzle (the quests ask for forks, mates and the tactic kinds)
+        if (p.type === 'fork') tick('pz_fork', 1); else if (p.type === 'mate') tick('pz_mate', 1);
+        else if (p.type === 'pin' || p.type === 'skewer' || p.type === 'hanging' || p.type === 'trapped') tick('pz_tactic', 1);
+      }
+      if (name === 'onlinegame' && p && p.won) tick('onlinewin', 1);
       if (name === 'puzzle' && p && (p.diff === 'normal' || p.diff === 'hard' || p.diff === 'insane')) { endlessTick('puzzles', 1); refresh(); }   // Endless goal: puzzles solved on Normal or Hard
     }
   }
@@ -639,7 +659,8 @@
         ${can ? '' : `<p class="sh-need">You need ${COST - S.tokens} more token${COST - S.tokens === 1 ? '' : 's'}. Daily tasks pay tokens.</p>`}
       </section>
       <h3 class="sh-sub">Collection</h3>
-      <div class="sh-grid">${tiles}</div>`;
+      <div class="sh-grid">${tiles}</div>${LP.upgrades ? LP.upgrades.html() : ''}`;
+    if (LP.upgrades) LP.upgrades.wire($('#sh-list'));
     document.querySelectorAll('[data-tab]').forEach((b) => { b.onclick = () => { tab = b.dataset.tab; renderShop(); }; });
     document.querySelectorAll('[data-open]').forEach((b) => { b.onclick = () => openCrate(b.dataset.open); });
     document.querySelectorAll('.sh-tile').forEach((b) => {
@@ -710,7 +731,7 @@
   $('#sh-back').addEventListener('click', () => { LP.closeSheet(); LP.showPage('menu'); refresh(); });
   $('#tk-shop').addEventListener('click', () => openPage('shop'));
 
-  LP.rewards = { event, addTokens, tokens: () => S.tokens };
+  LP.rewards = { event, addTokens, tokens: () => S.tokens, spend: (n) => { if (S.tokens < n) return false; S.tokens -= n; saveS(); refresh(); return true; }, rerender: () => { if ($('#shop').classList.contains('active')) renderShop(); } };
   LP.applyLook = apply;
   LP.hatDebug = { hatPos, HATS, PIECES, skinOf };
   apply();

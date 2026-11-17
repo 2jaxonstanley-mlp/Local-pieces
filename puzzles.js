@@ -13,7 +13,45 @@
   const glyph = (p) => FILLED[p & 7] + '︎';
   const DIFF = { easy: 'Easy', normal: 'Normal', hard: 'Hard', insane: 'Insane' };
   const FORK_TITLE = (p) => ({ royal: 'Royal fork', knight: 'Knight fork', pawn: 'Pawn fork', bishop: 'Bishop fork', rook: 'Rook fork', queen: 'Queen fork', king: 'King fork' }[p.kind] || 'Fork');
-  const TITLE = { mate: 'Checkmate puzzles', check: 'Check puzzles', best: 'Best move', sac: 'Sacrifice', fork: 'Fork' };
+  const TITLE = { mate: 'Checkmate puzzles', check: 'Check puzzles', best: 'Best move', sac: 'Sacrifice', fork: 'Fork', pin: 'Pin', skewer: 'Skewer', hanging: 'Hanging piece', trapped: 'Trapped piece', underpromo: 'Under-promotion', backrank: 'Back-rank mate', scholar: 'Scholar\'s mate', endgame: 'Endgame practice' };
+  // kinds that are solved by one move (the whole answer is the first move)
+  const BL = ['best', 'sac', 'fork', 'pin', 'skewer', 'hanging', 'trapped', 'underpromo', 'backrank', 'scholar', 'endgame'];
+  const isBL = (t) => BL.indexOf(t) >= 0;
+  const GOAL = {
+    sac: 'Find the winning sacrifice: give material to gain more.',
+    fork: 'Find the fork: attack two pieces at once so Black cannot save both.',
+    pin: 'Find the pin: line a piece up so the one in front cannot move without losing the one behind.',
+    skewer: 'Find the skewer: attack a valuable piece so that when it moves, you win the piece behind it.',
+    hanging: 'One Black piece is attacked and not protected. Win it for free (but watch the traps).',
+    trapped: 'Trap a piece: attack one that has nowhere safe to go.',
+    underpromo: 'Promote the pawn, but a queen is not the best choice here.',
+    backrank: 'Find the back-rank checkmate.',
+    scholar: 'Black has fallen for the oldest trap. Find the quick checkmate.',
+    endgame: 'Endgame technique: find the one precise move.',
+  };
+  const PROMPT = {
+    sac: 'Sacrifice material to win more back (or force mate).',
+    fork: 'One move attacks two pieces at once. Find the fork.',
+    pin: 'Pin a piece to something more valuable behind it.',
+    skewer: 'Attack the bigger piece so the one behind it falls.',
+    hanging: 'Which Black piece is free to take?',
+    trapped: 'Attack a piece that has no safe square.',
+    underpromo: 'Promote, but think about which piece.',
+    backrank: 'The king is boxed in. Mate on the back rank.',
+    scholar: 'White to move: the queen and bishop aim at f7.',
+    endgame: 'Few pieces, one precise move.',
+  };
+  const REFUTE = {
+    pin: 'That does not win material by force. Look for a move that pins a piece to something more valuable.',
+    skewer: 'That does not win material by force. Look for a check or attack on a big piece with another piece behind it on the same line.',
+    hanging: 'That does not win a piece cleanly. Check which Black pieces are attacked but not protected, and beware of protected ones.',
+    trapped: 'That does not win a piece by force. Find a piece with no safe squares and attack it.',
+    underpromo: 'Not the best promotion. Check whether a queen would be stalemate or miss a knight check or fork.',
+    backrank: 'That is not the back-rank mate. Look for a rook or queen move to the first rank.',
+    scholar: 'Not quite. Look at the f7 square: the queen is supported by the bishop.',
+    endgame: 'That lets the advantage slip. In an endgame every move counts: think about pawns, promotion and king activity.',
+  };
+  const LEAD = { sac: 'Sacrifice: ', best: 'Best move: ', pin: 'Pin: ', skewer: 'Skewer: ', hanging: 'Free piece: ', trapped: 'Trapped piece: ', underpromo: 'Under-promotion: ', backrank: 'Back-rank mate: ', scholar: 'Scholar\'s mate: ', endgame: 'Endgame: ' };
   const PIECE_NAME = { 5: 'Queen', 4: 'Rook', 3: 'Bishop', 2: 'Knight' };
 
   let cfg = null;          // { type, diff, n } (n: wanted mate length, 0 = any for the level)
@@ -140,8 +178,7 @@
     let goal = 'Find the best move for White.';
     if (P && P.type === 'mate') goal = 'Checkmate in ' + P.n + (P.n === 1 ? ' move.' : ' moves.');
     else if (P && P.type === 'check') goal = 'Safe check in ' + P.limit + (P.limit === 1 ? ' move' : ' moves') + ' (piece must not be capturable)' + (userMoves ? ' · ' + movesLeft() + ' left' : '') + '.';
-    else if (P && P.type === 'sac') goal = 'Find the winning sacrifice: give material to gain more.';
-    else if (P && P.type === 'fork') goal = 'Find the fork: attack two pieces at once so Black cannot save both.';
+    else if (P && GOAL[P.type]) goal = GOAL[P.type];
     const isAn = state === 'analysis', isWrong = state === 'wrong';
     $('#pz-goal').textContent = state === 'gen' ? 'Setting up the board…' : isAn ? 'Move both sides freely. There are no right or wrong moves.' : isWrong ? 'Undo the move or retry the puzzle.' : goal;
     const s = stats.get();
@@ -181,8 +218,7 @@
     if (state === 'failed') return 'Out of moves. Undo a move or retry.';
     if (P.type === 'mate') return P.n >= 2 && userMoves >= 1 ? (P.n - userMoves === 1 ? 'Now deliver checkmate' : 'Keep forcing: checkmate in ' + (P.n - userMoves) + ' more') : 'White to move: find the checkmate' + (P.n > 1 ? ' in ' + P.n : '');
     if (P.type === 'check') return 'Give a safe check in ' + movesLeft() + (movesLeft() === 1 ? ' move' : ' moves') + ' or fewer. Black will reply.';
-    if (P.type === 'sac') return 'Sacrifice material to win more back (or force mate).';
-    if (P.type === 'fork') return 'One move attacks two pieces at once. Find the fork.';
+    if (PROMPT[P.type]) return PROMPT[P.type];
     return 'Which move is best for White?';
   }
 
@@ -275,10 +311,10 @@
   }
   /** The solution as a title, a lead sentence, one explained step per move and a note on Black's other defences. */
   function explainParts(p) {
-    if (p.type === 'best' || p.type === 'sac' || p.type === 'fork') {
+    if (isBL(p.type)) {
       let lead = p.explain || '';
       if (p.type === 'sac') lead += ' That is roughly ' + (p.loss != null ? Math.max(1, Math.round(p.loss / 100)) : 'some') + ' point(s) of material at first, so a quick look at safe moves can mislead you.';
-      return { title: (p.type === 'sac' ? 'Sacrifice: ' : p.type === 'fork' ? FORK_TITLE(p) + ': ' : 'Best move: ') + p.san, lead, steps: narrate(p.pos, [p.good[0]], ''), defence: 'Habit to build: look at every check, capture and threat for both sides, and ask what each one achieves.' };
+      return { title: (p.type === 'fork' ? FORK_TITLE(p) + ': ' : LEAD[p.type] || 'Best move: ') + p.san, lead, steps: narrate(p.pos, [p.good[0]], ''), defence: 'Habit to build: look at every check, capture and threat for both sides, and ask what each one achieves.' };
     }
     if (p.type === 'mate') {
       const plains = [];
@@ -542,6 +578,7 @@
     }
     if (kind === 'check') return { text: 'That checks, but it is not a safe check. Find a check that nothing can take.', arrow: null };
     if (kind === 'fork') return { text: 'That does not win material by force. Look for a move that attacks two pieces at once.', arrow: null };
+    if (REFUTE[kind]) return { text: REFUTE[kind], arrow: null };
     if (kind === 'sac') return { text: 'Not the sacrifice. Look for a move that gives up material to win more back (or to force mate).', arrow: null };
     return { text: 'That is not the strongest move. Look at checks, captures and threats first.', arrow: null };
   }
@@ -653,20 +690,20 @@
   }
 
   function afterBest(m) {
-    const ok = P.good.some((x) => x.f === m.from && x.t === m.to);
+    const ok = P.good.some((x) => x.f === m.from && x.t === m.to && (x.p || 0) === (m.promo || 0));
     if (ok) { log.push(plain(m)); userMoves++; solve(); }
-    else badMove(m, P.type === 'sac' ? 'sac' : P.type === 'fork' ? 'fork' : 'best', 0);
+    else badMove(m, P.type, 0);
   }
 
   function solve() {
-    if (rush) { state = 'solved'; busy = true; render(); setStatus('Correct!', 'good'); rush.onSolved(); return; }
+    if (rush) { state = 'solved'; busy = true; render(); setStatus('Correct!', 'good'); rush.onSolved(log.find((e) => !e.r)); return; }
     state = 'solved';
     busy = false;
     render();
     updateInfo();
     clearSave();
     if (!revealed) {
-      if (LP.rewards) { LP.rewards.event('puzzle', { diff: cfg.diff }); if (!missed) LP.rewards.event('cleanpuzzle'); }
+      if (LP.rewards) { LP.rewards.event('puzzle', { diff: cfg.diff, type: P.type }); if (!missed) LP.rewards.event('cleanpuzzle'); }
       stats.win();
       const st = stats.get();
       if (!missed && st.streak >= 3 && LP.board) {
@@ -677,7 +714,7 @@
     }
     updateInfo();
     let msg;
-    if (P.type === 'best' || P.type === 'sac' || P.type === 'fork') msg = 'Correct! ' + P.san + '. ' + P.explain;
+    if (isBL(P.type)) msg = 'Correct! ' + P.san + '. ' + P.explain;
     else if (P.type === 'mate') msg = 'Checkmate! Mate in ' + P.n + ' solved. The explanation is above.';
     else msg = 'Check! Solved in ' + userMoves + (userMoves === 1 ? ' move.' : ' moves.');
     setStatus(msg, 'good');
@@ -689,7 +726,7 @@
     if (busy || state === 'solved' || state === 'gen' || !P) return;
     stats.miss();
     let from = -1;
-    if (P.type === 'best' || P.type === 'sac' || P.type === 'fork') from = P.good[0].f;
+    if (isBL(P.type)) from = P.good[0].f;
     else if (P.type === 'mate') {
       if (tw) from = PG.dec(tw[0]).f;
       else if (userMoves >= 1) { const mv = P.n - userMoves <= 3 ? PG.findMateMove(g, P.n - userMoves) : null; if (mv) from = mv.from; else { toast('That line is off the prepared solution. Try Retry.'); return; } }
@@ -716,7 +753,7 @@
     setStatus('Playing solution…', 'dim');
 
     const steps = [];             // sequence of plain moves (White and Black) to animate
-    if (P.type === 'best' || P.type === 'sac' || P.type === 'fork') {
+    if (isBL(P.type)) {
       steps.push(P.good[0]);
     } else if (P.type === 'mate') {
       if (tw) { for (let k = 0; k < P.n; k++) { steps.push({ _twm: true }); if (k < P.n - 1) steps.push({ _tbr: true }); } }
@@ -743,7 +780,7 @@
         render();
         updateInfo();
         let msg = 'Solution played.';
-        if (P.type === 'best' || P.type === 'sac' || P.type === 'fork') msg = (P.type === 'sac' ? 'Sacrifice' : P.type === 'fork' ? 'Fork' : 'Best move') + ': ' + P.san + '. ' + P.explain;
+        if (isBL(P.type)) msg = (P.type === 'fork' ? 'Fork' : (LEAD[P.type] || 'Best move: ').replace(/: $/, '')) + ': ' + P.san + '. ' + P.explain;
         else if (P.type === 'mate') msg = P.n === 1 ? 'Checkmate solution. The explanation is above.' : 'Forced mate in ' + P.n + ' (one way of defending shown). The explanation is above.';
         else msg = 'Safe check solution.';
         setStatus(msg, 'good');
@@ -914,6 +951,14 @@
     { id: 'best', icon: 4, name: 'Best move', sub: 'Find the strongest move.' },
     { id: 'sac', icon: 2, name: 'Sacrifice', sub: 'Give material to win more, or to force mate.' },
     { id: 'fork', icon: 1, name: 'Fork', sub: 'Knight, pawn, bishop, rook, queen and royal forks.' },
+    { id: 'pin', icon: 3, name: 'Pin', sub: 'Pin a piece to something more valuable.' },
+    { id: 'skewer', icon: 2, name: 'Skewer', sub: 'Attack the big piece, win the one behind it.' },
+    { id: 'hanging', icon: 5, name: 'Hanging piece', sub: 'Spot the piece nothing protects.' },
+    { id: 'trapped', icon: 4, name: 'Trapped piece', sub: 'Win a piece that has no safe square.' },
+    { id: 'backrank', icon: 2, name: 'Back-rank mate', sub: 'Mate a king boxed in by its own pawns.' },
+    { id: 'scholar', icon: 1, name: 'Scholar\'s mate', sub: 'The classic quick queen and bishop attack on f7.' },
+    { id: 'underpromo', icon: 5, name: 'Under-promotion', sub: 'Promote to a knight, rook or bishop instead of a queen.' },
+    { id: 'endgame', icon: 0, name: 'Endgame practice', sub: 'Pawns, rooks and kings: the one precise move.' },
   ];
   const LEVELS = [
     { id: 'easy', name: 'Easy', sub: 'Clear and straightforward.', n: 1 },
@@ -929,6 +974,14 @@
     check: { easy: 'A safe check, a couple of moves at most.', normal: 'More pieces defending, up to 3 moves.', hard: 'A crowded board: the safe check takes 3 moves.' },
     best: { easy: 'Win something clear.', normal: 'The best move is not the obvious capture.', hard: 'A deep tactic that a short look misses.' },
     fork: { easy: 'A clear fork, often a knight, with few pieces around.', normal: 'More pieces on the board: pawn, bishop, rook and queen forks too.', hard: 'A crowded board where the fork wins a full piece.' },
+    pin: { easy: 'A pin that wins a piece, with few pieces around.', normal: 'More pieces around; the pin is against a queen or the king.', hard: 'A crowded board where the pin wins material by force.' },
+    skewer: { easy: 'A check on the king wins the piece behind it.', normal: 'Skewers against queens and rooks too.', hard: 'A crowded board where the skewer must be spotted.' },
+    hanging: { easy: 'One piece is free to take.', normal: 'Some captures are traps. Find the free piece.', hard: 'Several protected pieces tempt you. Only one is free.' },
+    trapped: { easy: 'A piece on the edge has nowhere to go.', normal: 'Knights, bishops and rooks that are almost out of squares.', hard: 'A crowded board where one quiet move traps a piece.' },
+    backrank: { easy: 'Mate in 1 on the back rank.', normal: 'Back-rank mate in 1 or 2.', hard: 'A guard defends the back rank: remove it first.' },
+    scholar: { easy: 'The classic Scholar\'s mate: Qxf7#.', normal: 'The same trick with extra moves played first.', hard: 'More moves played; spot that the trap is still on.' },
+    underpromo: { easy: 'A pawn about to promote. Which piece?', normal: 'A knight check or fork beats the queen.', hard: 'More pieces around; the queen is not best.' },
+    endgame: { easy: 'A pawn or a capture decides the endgame.', normal: 'Pawn races and technique with a few pieces.', hard: 'Deeper endgame technique.' },
     sac: { easy: 'A simple sacrifice that wins quickly.', normal: 'A sacrifice that leads to mate or a bigger win.', hard: 'A big sacrifice and a deep combination.' },
   };
   const meter = (n) => `<span class="pz-lv lv${n}" aria-hidden="true"><i class="${n >= 1 ? 'on' : ''}"></i><i class="${n >= 2 ? 'on' : ''}"></i><i class="${n >= 3 ? 'on' : ''}"></i></span>`;
@@ -1022,6 +1075,8 @@
       load(d.P, d.log);
     },
     peek() { return { P, state, userMoves }; },
+    /** Open the difficulty pick for one kind of puzzle (used by Analyze's weakness focus). */
+    ask(kind) { LP.closeSheet(); askDiff(kind); },
     /** Puzzle Rush / Battle: puzzlerush.js drives the puzzle screen through these. */
     rushStart(hooks, title) {
       rush = hooks; token++;

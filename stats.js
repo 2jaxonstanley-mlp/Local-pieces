@@ -1,6 +1,7 @@
 /**
- * Stats page (this used to be the plain leaderboard): an overview, chess, puzzle and Capture Rush breakdowns,
- * plus the old leaderboard as "Records". Everything is saved on this device only.
+ * Stats page (this used to be the plain leaderboard): an overview, chess, puzzle and Capture Rush breakdowns.
+ * Saved on this device. A small card of it (profileData) is also sent to the online server so other players can open your profile.
+ * Elo and the win streak come from online games against real players (event 'online').
  * The games report through LP.rewards.event (which forwards to LP.stats.event) and LP.stats.puzzle.
  */
 (() => {
@@ -11,7 +12,8 @@
   const KEY = 'localPieces.stats';
   const LEVELS = ['dumb', 'easy', 'medium', 'hard', 'godly', 'insane'];
   const MODES = { basic: 'Classic', secret: 'Secret Queen', bullet: 'Bullet', rapid: 'Rapid', hockey: 'Air Hockey', snail: 'Immortal Snail', gamble: 'Gamblite Chess', guess: 'Guess Who Chess', royale: 'Chess Royale' };
-  const MODE_COL = { basic: '#8fc15b', secret: '#b48cf2' };
+  const MODE_COL = { basic: '#8fc15b', bullet: '#f2c45a', rapid: '#5ab0ff' };
+  const ELO_MODES = ['basic', 'bullet', 'rapid'];
   const PNAME = { q: 'Queen', r: 'Rook', b: 'Bishop', n: 'Knight' };
   const PIC = { p: 0, b: 1, q: 2, k: 3, n: 4, r: 5 };
   const QUALITY = [
@@ -22,10 +24,12 @@
     ['matewhite', 'Checkmate (W)', '#ebebee'], ['mateblack', 'Checkmate (B)', '#19191c'],
   ];
   const DIFFS = [['easy', 'Easy', '#8fc15b'], ['normal', 'Normal', '#f2c45a'], ['hard', 'Hard', '#ef6a4c'], ['insane', 'Insane', '#c77dff']];
-  const KINDS = { mate: ['Checkmate', 3], check: ['Check', 5], best: ['Best move', 4], sac: ['Sacrifice', 2], fork: ['Fork', 1] };
+  const KINDS = { mate: ['Checkmate', 3], check: ['Check', 5], best: ['Best move', 4], sac: ['Sacrifice', 2], fork: ['Fork', 1], pin: ['Pin', 3], skewer: ['Skewer', 2], hanging: ['Hanging piece', 5], trapped: ['Trapped piece', 4], backrank: ['Back-rank mate', 2], scholar: ['Scholar\'s mate', 1], underpromo: ['Under-promotion', 5], endgame: ['Endgame practice', 0] };
+  const KIND_IDS = Object.keys(KINDS);
+  const zeroKinds = () => { const o = {}; KIND_IDS.forEach((k) => { o[k] = 0; }); return o; };
 
   /* ------------------------------------------------------------------ saved data */
-  const blank = () => ({ v: 1, since: 0, games: [], caps: 0, q: {}, puz: {}, rush: [], secs: 0 });
+  const blank = () => ({ v: 1, since: 0, games: [], caps: 0, q: {}, puz: {}, rush: [], secs: 0, on: [], owc: 0, owb: 0 });
   let S = blank();
   try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.v === 1) S = Object.assign(blank(), s); } catch (e) { /* ignore */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } };
@@ -33,6 +37,14 @@
 
   function event(name, p) {
     if (name === 'capture') { S.caps += typeof p === 'number' ? p : 1; save(); return; }
+    if (name === 'online' && p) {   // a finished online game against a real player: { m, res: w|l|d, opp, oe, b, a, mv }
+      touch();
+      S.on.push({ t: Date.now(), m: p.m, res: p.res, opp: String(p.opp || 'Player').slice(0, 16), oe: p.oe || 0, b: p.b, a: p.a, mv: p.mv || 0 });
+      if (S.on.length > 300) S.on.shift();
+      if (p.res === 'w') { S.owc++; S.owb = Math.max(S.owb, S.owc); } else S.owc = 0;   // a draw or a loss ends the streak
+      save();
+      return;
+    }
     if (name === 'game' && p) {
       touch();
       S.games.push({ t: Date.now(), mode: p.mode, lvl: p.level || 'pvp', res: p.level === 'pvp' ? 'p' : p.won ? 'w' : p.draw ? 'd' : 'l', mv: p.moves || 0, secs: p.secs || 0, elo: p.elo ? { b: p.elo.before, a: p.elo.after } : null });
@@ -74,69 +86,79 @@
     return { cur, best };
   }
 
-  /** Rating history for one mode as a small line chart. */
-  function spark(mode, color) {
-    const pts = S.games.filter((g) => g.mode === mode && g.elo).map((g) => g.elo.a);
-    const now = LP.profile ? LP.profile.elo(mode) : null;
-    if (!pts.length) return '<div class="st-spark none">No rated games yet</div>';
+  /** Rating history as a small line chart. pts = the ratings after each online game. */
+  function spark(pts, color) {
+    if (!pts || !pts.length) return '<div class="st-spark none">No online games yet</div>';
     const arr = pts.slice(-24);
     if (arr.length === 1) arr.unshift(arr[0]);
     const lo = Math.min(...arr), hi = Math.max(...arr), span = Math.max(hi - lo, 20), W = 200, H = 46;
     const xy = arr.map((v, i) => [Math.round(i * W / (arr.length - 1)), Math.round(H - 4 - (v - lo) / span * (H - 10))]);
     const line = xy.map((p) => p.join(',')).join(' ');
-    return `<svg class="st-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><polyline points="0,${H} ${line} ${W},${H}" fill="${color}" fill-opacity=".14" stroke="none"/><polyline points="${line}" fill="none" stroke="${color}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>` + (now == null ? '' : '');
+    return `<svg class="st-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><polyline points="0,${H} ${line} ${W},${H}" fill="${color}" fill-opacity=".14" stroke="none"/><polyline points="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
   }
 
   const tile = (label, val, sub, col) => `<div class="st-tile" style="--c:${col || '#8fc15b'}"><small>${label}</small><b>${val}</b>${sub ? `<span>${sub}</span>` : ''}</div>`;
   const bar = (parts) => `<div class="st-stack">${parts.filter((p) => p.v > 0).map((p) => `<i style="flex:${p.v};background:${p.c}" title="${esc(p.l)}"></i>`).join('')}</div>`;
 
   /* ------------------------------------------------------------------ views */
-  function overview() {
-    const P = LP.profile, name = (P && P.name()) || '';
-    const cg = vsComp(), t = tally(S.games), st = streaks(S.games);
-    const rec = (m) => (P && P.rec ? P.rec(m) : { w: 0, l: 0, d: 0 });
-    const w = rec('basic').w + rec('secret').w, l = rec('basic').l + rec('secret').l, d = rec('basic').d + rec('secret').d;
-    const total = Math.max(w + l + d + t.p, S.games.length);
-    const wins = Math.max(w + (S.games.filter((g) => g.res === 'p').length ? 0 : 0), t.w);
-    const eloCard = (m) => {
-      const cur = P ? P.elo(m) : 800, hist = S.games.filter((g) => g.mode === m && g.elo).map((g) => g.elo.a);
-      const peak = Math.max(cur, ...hist), r = rec(m);
-      return `<div class="st-elo" style="--c:${MODE_COL[m]}"><small>${MODES[m]}</small><b>${cur}</b><span>Peak ${peak} &middot; ${r.w}W ${r.l}L ${r.d}D</span>${spark(m, MODE_COL[m])}</div>`;
+  const perfectCount = () => Object.keys(S.puz).reduce((a, k) => a + ((S.puz[k] && S.puz[k].c) || 0), 0);
+  /** Everything the overview shows, as plain data. The same shape is what other players get to see (profileData). */
+  function selfData() {
+    const P = LP.profile, onl = S.on || [], e = {};
+    ELO_MODES.forEach((m) => {
+      const h = onl.filter((x) => x.m === m && x.a != null).map((x) => x.a), cur = P ? P.elo(m) : (m === 'basic' ? 800 : 1000), r = P ? P.on(m) : { w: 0, l: 0, d: 0 };
+      e[m] = { e: cur, pk: Math.max(cur, ...h), w: r.w, l: r.l, d: r.d, h: h.slice(-24) };
+    });
+    const w = ELO_MODES.reduce((a, m) => a + e[m].w, 0), l = ELO_MODES.reduce((a, m) => a + e[m].l, 0), d = ELO_MODES.reduce((a, m) => a + e[m].d, 0);
+    return {
+      v: 1, n: (P && P.name()) || '', avg: P ? P.avg() : 0, since: S.since || 0, e, w, l, d, ws: { c: S.owc || 0, b: S.owb || 0 },
+      cap: S.caps || 0, pz: DIFFS.reduce((a, x) => a + puzStat(x[0]).solved, 0), pf: perfectCount(), rb: S.rush.reduce((a, r) => Math.max(a, r.score), 0) || rushBestOld(),
+      sec: Math.round(S.secs || 0), q: (S.q.brilliant || 0) + (S.q.great || 0) + (S.q.best || 0),
+      rec: onl.slice(-6).reverse().map((x) => ({ r: x.res, m: x.m, o: x.opp, oe: x.oe, dl: (x.a != null && x.b != null) ? x.a - x.b : 0, t: x.t })),
     };
-    const solved = DIFFS.reduce((a, x) => a + puzStat(x[0]).solved, 0);
-    const bestRush = S.rush.reduce((a, r) => Math.max(a, r.score), 0) || rushBestOld();
-    const recent = S.games.slice(-6).reverse().map((g) => `<li class="st-game r-${g.res}">
-        <span class="st-res">${g.res === 'w' ? 'W' : g.res === 'l' ? 'L' : g.res === 'd' ? 'D' : '·'}</span>
-        <span class="st-gwho"><b>${MODES[g.mode] || g.mode}</b><span>vs ${esc(lvl(g.lvl))} &middot; ${g.mv} moves</span></span>
-        <span class="st-gval">${g.elo ? `<b class="${g.elo.a >= g.elo.b ? 'up' : 'dn'}">${g.elo.a >= g.elo.b ? '+' : '−'}${Math.abs(g.elo.a - g.elo.b)}</b>` : ''}<span>${short(g.t)}</span></span></li>`).join('');
-    return `<div class="st-hero"><span class="st-av">${esc((name[0] || '?').toUpperCase())}</span><span class="st-hero-t"><b>${esc(name || 'Player')}</b><span>${S.since ? 'Playing since ' + fmtD(S.since) : 'Play a game to start your stats'}</span></span></div>
-      <div class="st-elos">${eloCard('basic')}${eloCard('secret')}</div>
-      <div class="st-grid">
-        ${tile('Games', total, t.p ? t.p + ' with friends' : 'against the computer', '#8fc15b')}
-        ${tile('Win rate', pct(w, w + l + d) + '%', w + ' wins', '#f2c45a')}
-        ${tile('Win streak', st.best, 'now ' + st.cur, '#ef6a4c')}
-        ${tile('Captured', S.caps, 'pieces taken', '#5ab0ff')}
-        ${tile('Puzzles', solved, 'solved', '#f58a2d')}
-        ${tile('Rush best', bestRush, 'points', '#ff9a4d')}
-        ${tile('Time played', S.secs ? fmtT(S.secs) : '0m', 'since tracking began', '#b48cf2')}
-        ${tile('Quality moves', (S.q.brilliant || 0) + (S.q.great || 0) + (S.q.best || 0), 'brilliant, great or best', '#26c2a3')}
-      </div>
-      <h3 class="st-sub">Recent games</h3>
-      ${recent ? `<ol class="st-games">${recent}</ol>` : empty('Your latest games show up here.')}`;
   }
-  const rushBestOld = () => { try { const o = JSON.parse(localStorage.getItem('localPieces.rushBestPts')) || {}; return Math.max(0, ...Object.values(o).filter((x) => typeof x === 'number')); } catch (e) { return 0; } };
+  /** The overview page for one player. d = selfData() or another player's card, pfp = their picture (or '' for a letter). */
+  function viewHtml(d, pfp, nameOverride) {
+    const name = nameOverride || d.n || 'Player';
+    const av = pfp ? `<span class="st-av" style="background-image:url(${pfp});background-size:cover;background-position:center"></span>` : `<span class="st-av">${esc((name[0] || '?').toUpperCase())}</span>`;
+    const card = (m) => { const x = (d.e && d.e[m]) || { e: m === 'basic' ? 800 : 1000, pk: 0, w: 0, l: 0, d: 0, h: [] };
+      return `<div class="st-elo" style="--c:${MODE_COL[m]}"><small>${MODES[m]}</small><b>${x.e}</b><span>Peak ${Math.max(x.pk || 0, x.e)} &middot; ${x.w}W ${x.l}L ${x.d}D</span>${spark(x.h, MODE_COL[m])}</div>`; };
+    const n = d.w + d.l + d.d;
+    const recent = (d.rec || []).map((g) => `<li class="st-game r-${g.r}">
+        <span class="st-res">${g.r === 'w' ? 'W' : g.r === 'l' ? 'L' : 'D'}</span>
+        <span class="st-gwho"><b>${esc(MODES[g.m] || g.m)}</b><span>vs ${esc(g.o || 'Player')}${g.oe ? ' (' + g.oe + ')' : ''}</span></span>
+        <span class="st-gval">${g.dl ? `<b class="${g.dl >= 0 ? 'up' : 'dn'}">${g.dl >= 0 ? '+' : '−'}${Math.abs(g.dl)}</b>` : ''}<span>${short(g.t)}</span></span></li>`).join('');
+    return `<div class="st-hero">${av}<span class="st-hero-t"><b>${esc(name)}</b><span>Average Elo <strong class="st-avg">${d.avg || '—'}</strong>${d.since ? ' &middot; since ' + fmtD(d.since) : ''}</span></span></div>
+      <div class="st-elos">${ELO_MODES.map(card).join('')}</div>
+      <div class="st-grid">
+        ${tile('Online games', n, d.w + 'W ' + d.l + 'L ' + d.d + 'D', '#8fc15b')}
+        ${tile('Win rate', pct(d.w, n) + '%', 'vs real players', '#f2c45a')}
+        ${tile('Win streak', (d.ws && d.ws.b) || 0, 'vs real players &middot; now ' + ((d.ws && d.ws.c) || 0), '#ef6a4c')}
+        ${tile('Captured', d.cap || 0, 'pieces taken', '#5ab0ff')}
+        ${tile('Puzzles', d.pz || 0, 'solved', '#f58a2d')}
+        ${tile('Perfect puzzles', d.pf || 0, 'no miss, no hint', '#26c2a3')}
+        ${tile('Rush best', d.rb || 0, 'points', '#ff9a4d')}
+        ${tile('Time played', d.sec ? fmtT(d.sec) : '0m', 'on the app', '#b48cf2')}
+      </div>
+      <h3 class="st-sub">Recent online games</h3>
+      ${recent ? `<ol class="st-games">${recent}</ol>` : empty('Online games against real players show up here.')}`;
+  }
+  function overview() {
+    const P = LP.profile;
+    return viewHtml(selfData(), P && P.pfp && P.pfp(), (P && P.name()) || '');
+  }
+  const rushBestOld = () => { if (OLDOV != null) return OLDOV; try { const o = JSON.parse(localStorage.getItem('localPieces.rushBestPts')) || {}; return Math.max(0, ...Object.values(o).filter((x) => typeof x === 'number')); } catch (e) { return 0; } };
 
   let chessMode = 'all';
   function chess() {
     const P = LP.profile;
-    const rec = (m) => (P && P.rec ? P.rec(m) : { w: 0, l: 0, d: 0 });
-    const modes = chessMode === 'all' ? ['basic', 'secret'] : [chessMode];
     const list = S.games.filter((g) => chessMode === 'all' || g.mode === chessMode);
     const comp = list.filter((g) => g.res !== 'p');
-    const w = modes.reduce((a, m) => a + rec(m).w, 0), l = modes.reduce((a, m) => a + rec(m).l, 0), d = modes.reduce((a, m) => a + rec(m).d, 0);
+    const onl = (S.on || []).filter((g) => chessMode === 'all' || g.m === chessMode);
+    const w = comp.filter((g) => g.res === 'w').length, l = comp.filter((g) => g.res === 'l').length, d = comp.filter((g) => g.res === 'd').length;
     const n = w + l + d;
-    const chips = [['all', 'All'], ['basic', 'Classic'], ['secret', 'Secret Queen']].map(([k, nm]) => `<button class="lb-chip${chessMode === k ? ' on' : ''}" data-cm="${k}">${nm}</button>`).join('');
-    if (!n && !list.length) return `<div class="lb-chips seg st-seg">${chips}</div>` + empty('Play a game against the computer and your results will be broken down here.');
+    const chips = [['all', 'All'], ['basic', 'Classic'], ['bullet', 'Bullet'], ['rapid', 'Rapid']].map(([k, nm]) => `<button class="lb-chip${chessMode === k ? ' on' : ''}" data-cm="${k}">${nm}</button>`).join('');
+    if (!n && !list.length && !onl.length) return `<div class="lb-chips seg st-seg">${chips}</div>` + empty('Play a game and your results will be broken down here.');
     const byLvl = LEVELS.concat(['pvp']).map((k) => {
       const g = list.filter((x) => x.lvl === k); if (!g.length) return '';
       const tt = tally(g), pl = tt.w + tt.l + tt.d;
@@ -149,29 +171,34 @@
     const secsAvg = list.length ? list.reduce((a, g) => a + g.secs, 0) / list.length : 0;
     const fastest = wins.length ? Math.min(...wins.map((g) => g.mv)) : 0;
     const longest = list.length ? Math.max(...list.map((g) => g.mv)) : 0;
-    const gains = comp.filter((g) => g.elo).map((g) => g.elo.a - g.elo.b);
-    const st = streaks(S.games.filter((g) => chessMode === 'all' || g.mode === chessMode));
+    const gains = onl.filter((g) => g.a != null && g.b != null).map((g) => g.a - g.b);
+    const st = streaks(onl.map((g) => ({ res: g.res })));
+    const ow = onl.filter((g) => g.res === 'w').length, ol = onl.filter((g) => g.res === 'l').length, od = onl.filter((g) => g.res === 'd').length;
     const qTotal = QUALITY.reduce((a, x) => a + (S.q[x[0]] || 0), 0);
     const quality = qTotal ? `<h3 class="st-sub">Move quality</h3><div class="st-quality">${QUALITY.map(([id, nm, col]) => {
       const v = S.q[id] || 0;
       return `<div class="st-q"><img src="icon-${id}.png" alt="" width="22" height="22"><span class="st-qn">${nm}</span><span class="st-qb"><i style="width:${Math.max(v ? 3 : 0, pct(v, qTotal))}%;background:${col}"></i></span><b>${v}</b></div>`;
     }).join('')}</div><p class="st-note">Counted from your moves when move strength labels are switched on.</p>` : '';
     return `<div class="lb-chips seg st-seg">${chips}</div>
-      <div class="st-card"><div class="st-rec"><div><b>${w}</b><small>Wins</small></div><div><b>${d}</b><small>Draws</small></div><div><b>${l}</b><small>Losses</small></div><div><b>${pct(w, n)}%</b><small>Win rate</small></div></div>
+      <div class="st-card"><h3 class="st-sub" style="margin-top:0">Online (real players)</h3><div class="st-rec"><div><b>${ow}</b><small>Wins</small></div><div><b>${od}</b><small>Draws</small></div><div><b>${ol}</b><small>Losses</small></div><div><b>${pct(ow, ow + ol + od)}%</b><small>Win rate</small></div></div>
+        ${bar([{ v: ow, c: '#81b64c', l: 'Wins' }, { v: od, c: '#8a8a85', l: 'Draws' }, { v: ol, c: '#ca3431', l: 'Losses' }])}</div>
+      <div class="st-card"><h3 class="st-sub" style="margin-top:0">Against the computer</h3><div class="st-rec"><div><b>${w}</b><small>Wins</small></div><div><b>${d}</b><small>Draws</small></div><div><b>${l}</b><small>Losses</small></div><div><b>${pct(w, n)}%</b><small>Win rate</small></div></div>
         ${bar([{ v: w, c: '#81b64c', l: 'Wins' }, { v: d, c: '#8a8a85', l: 'Draws' }, { v: l, c: '#ca3431', l: 'Losses' }])}</div>
       <div class="st-grid">
-        ${tile('Best win streak', st.best, 'now ' + st.cur, '#ef6a4c')}
+        ${tile('Online win streak', st.best, 'vs real players &middot; now ' + st.cur, '#ef6a4c')}
         ${tile('Toughest beaten', wins.length ? lvl(top) : '—', wins.length ? wins.length + ' wins counted' : 'no wins yet', '#f2c45a')}
         ${tile('Average game', mvAvg ? mvAvg + ' moves' : '—', secsAvg ? fmtT(secsAvg) : '', '#5ab0ff')}
         ${tile('Fastest win', fastest ? fastest + ' moves' : '—', longest ? 'longest game ' + longest : '', '#8fc15b')}
-        ${tile('Best rating jump', gains.length ? '+' + Math.max(0, Math.max(...gains)) : '—', 'in a single game', '#26c2a3')}
-        ${tile('Biggest drop', gains.length ? '−' + Math.abs(Math.min(0, Math.min(...gains))) : '—', 'in a single game', '#ca3431')}
+        ${tile('Best rating jump', gains.length ? '+' + Math.max(0, Math.max(...gains)) : '—', 'in one online game', '#26c2a3')}
+        ${tile('Biggest drop', gains.length ? '−' + Math.abs(Math.min(0, Math.min(...gains))) : '—', 'in one online game', '#ca3431')}
       </div>
       ${byLvl ? `<h3 class="st-sub">By opponent</h3><ul class="st-rows">${byLvl}</ul><p class="st-note">Wins, losses and draws, from games played since stats were added.</p>` : ''}
       ${quality}`;
   }
 
+  let RAWOV = null, OLDOV = null;   // while another player's profile is drawn, their puzzle streaks / old rush best stand in for the local ones
   function puzRaw() {
+    if (RAWOV) return RAWOV;
     try { return JSON.parse(localStorage.getItem('localPieces.puzzleStats2')) || {}; } catch (e) { return {}; }
   }
   /** Aggregate one difficulty across types (legacy + new keys). */
@@ -180,7 +207,7 @@
     const mine = S.puz[diff] || { s: 0, c: 0, m: 0, k: {} };
     let solved = mine.s || 0, missed = mine.m || 0, clean = mine.c || 0;
     let best = 0, streak = 0;
-    const kinds = Object.assign({ mate: 0, check: 0, best: 0, sac: 0, fork: 0 }, mine.k || {});
+    const kinds = Object.assign(zeroKinds(), mine.k || {});
     // Legacy difficulty-only key
     const leg = raw[diff] || {};
     solved = Math.max(solved, leg.solved || 0);
@@ -188,7 +215,7 @@
     best = Math.max(best, leg.best || 0);
     streak = Math.max(streak, leg.streak || 0);
     // Per-type keys: easy:mate, etc.
-    ['mate', 'check', 'best', 'sac', 'fork'].forEach((t) => {
+    KIND_IDS.forEach((t) => {
       const o = raw[diff + ':' + t] || {};
       solved += o.solved || 0;
       missed += o.missed || 0;
@@ -213,10 +240,10 @@
     const rows = DIFFS.map(([k, nm, col]) => ({ k, nm, col, s: puzStat(k) }));
     const solved = rows.reduce((a, r) => a + r.s.solved, 0), missed = rows.reduce((a, r) => a + r.s.missed, 0);
     if (!solved && !missed) return empty('Solve a puzzle and your accuracy and streaks will appear here.');
-    const kinds = { mate: 0, check: 0, best: 0, sac: 0, fork: 0 };
+    const kinds = zeroKinds();
     rows.forEach((r) => Object.keys(r.s.kinds).forEach((x) => { if (kinds[x] != null) kinds[x] += r.s.kinds[x]; }));
-    const kTot = kinds.mate + kinds.check + kinds.best + kinds.sac + kinds.fork;
-    const typeBest = Math.max(puzTypeStat('mate').best, puzTypeStat('check').best, puzTypeStat('best').best, puzTypeStat('sac').best, puzTypeStat('fork').best, ...rows.map((r) => r.s.best));
+    const kTot = KIND_IDS.reduce((a, k) => a + (kinds[k] || 0), 0);
+    const typeBest = Math.max(...KIND_IDS.map((k) => puzTypeStat(k).best), ...rows.map((r) => r.s.best));
     const typeRows = Object.keys(KINDS).map((k) => {
       const ts = puzTypeStat(k);
       return `<div class="st-q"><span class="st-qi">${spr(KINDS[k][1])}</span><span class="st-qn">${KINDS[k][0]}</span>` +
@@ -231,7 +258,7 @@
         <span class="st-ring" style="--p:${pct(r.s.solved, r.s.solved + r.s.missed)}"><i>${pct(r.s.solved, r.s.solved + r.s.missed)}%</i></span>
         <span>${r.s.solved} solved</span><span>${r.s.missed} missed</span><span>Best streak ${r.s.best}</span></div>`).join('')}</div>
       ${kTot ? `<h3 class="st-sub">By puzzle type</h3><div class="st-quality">${typeRows}</div>
-        <p class="st-note">Streaks are tracked separately for Checkmate, Check, Best move and Sacrifice — one never replaces another.</p>` : ''}
+        <p class="st-note">Streaks are tracked separately for every puzzle type — one never replaces another.</p>` : ''}
       <div class="st-grid">${tile('Clean solves', rows.reduce((a, r) => a + r.s.clean, 0), 'no misses', '#26c2a3')}${tile('Puzzle rate', pct(solved, solved + missed) + '%', 'solved vs missed', '#f2c45a')}</div>`;
   }
 
@@ -252,7 +279,7 @@
   }
 
   /* ------------------------------------------------------------------ page */
-  const TABS = [['overview', 'Overview'], ['chess', 'Chess'], ['puzzles', 'Puzzles'], ['rush', 'Rush'], ['records', 'Records']];
+  const TABS = [['overview', 'Overview'], ['chess', 'Chess'], ['puzzles', 'Puzzles'], ['rush', 'Rush']];
   const TAB_IDS = new Set(TABS.map(([k]) => k));
   let tab = 'overview';
   function render() {
@@ -260,21 +287,45 @@
     const nav = $('#st-nav');
     nav.innerHTML = TABS.map(([k, nm]) => `<button class="lb-tab${k === tab ? ' on' : ''}" data-st="${k}">${nm}</button>`).join('');
     nav.querySelectorAll('[data-st]').forEach((b) => { b.onclick = () => { tab = b.dataset.st; render(); $('#board').scrollTop = 0; }; });
-    const rec = tab === 'records';
-    $('#lb-records').classList.toggle('hidden', !rec);
-    $('#st-body').classList.toggle('hidden', rec);
-    if (rec) { if (LP.board && LP.board.render) LP.board.render(); return; }
+    $('#lb-records').classList.add('hidden');
+    $('#st-body').classList.remove('hidden');
     const bodyFn = { overview, chess, puzzles, rush }[tab];
     $('#st-body').innerHTML = bodyFn ? bodyFn() : overview();
     document.querySelectorAll('[data-cm]').forEach((b) => { b.onclick = () => { chessMode = b.dataset.cm; render(); }; });
   }
+  /** Everything another player needs to open your profile with all the tabs: the overview data plus a trimmed copy of your stats. */
+  function selfCard() {
+    const trim = (n) => ({ v: 2, d: selfData(), s: { since: S.since, caps: S.caps, q: S.q, puz: S.puz, secs: S.secs, owc: S.owc, owb: S.owb, games: S.games.slice(-n.g), on: S.on.slice(-n.o), rush: S.rush.slice(-n.r) }, raw: puzRaw(), old: rushBestOld() });
+    let n = { g: 80, o: 150, r: 40 }, c = trim(n);
+    for (let i = 0; i < 4 && JSON.stringify(c).length > 44000; i++) { n = { g: n.g >> 1, o: n.o >> 1, r: n.r >> 1 }; c = trim(n); }
+    return c;
+  }
+  /** Draws the Stats tabs (Overview, Chess, Puzzles, Rush) for any player into nav/body. card = selfCard() or what the server sent. */
+  function mountProfile(nav, body, card, pfp, name) {
+    let t = 'overview';
+    const draw = () => {
+      nav.innerHTML = TABS.map(([k, nm]) => `<button class="lb-tab${k === t ? ' on' : ''}" data-st="${k}">${nm}</button>`).join('');
+      nav.querySelectorAll('[data-st]').forEach((b) => { b.onclick = () => { t = b.dataset.st; draw(); }; });
+      const mine = S, ro = RAWOV, oo = OLDOV;
+      try {
+        if (card.s) { S = Object.assign(blank(), card.s); RAWOV = card.raw || {}; OLDOV = card.old || 0; }
+        body.innerHTML = t === 'overview' || !card.s ? (t === 'overview' ? viewHtml(card.d, pfp, name) : empty('This player has not shared these stats yet.')) : ({ chess, puzzles, rush }[t])();
+      } finally { S = mine; RAWOV = ro; OLDOV = oo; }
+      body.querySelectorAll('[data-cm]').forEach((b) => { b.onclick = () => { chessMode = b.dataset.cm; draw(); }; });
+    };
+    draw();
+  }
   function open(t) { if (typeof t === 'string' && TAB_IDS.has(t)) tab = t; render(); LP.showPage('board'); }
   $('.mode[data-mode="board"]').addEventListener('click', () => open());
 
-  /** Totals for the global leaderboard, and a way for Puzzle Rush to add its play time. */
+  /** Totals for the global leaderboards and the profile card other players can open. */
   function snapshot() {
-    return { cap: S.rush.reduce((m, r) => Math.max(m, r.score || 0), 0) || (typeof rushBestOld === 'function' ? rushBestOld() : 0), brill: S.q.brilliant || 0, best: S.q.best || 0, secs: Math.round(S.secs || 0) };
+    const d = selfData(), P = LP.profile, played = P && P.played ? P.played() : 0;
+    return {
+      cap: S.rush.reduce((m, r) => Math.max(m, r.score || 0), 0) || (typeof rushBestOld === 'function' ? rushBestOld() : 0), brill: S.q.brilliant || 0, best: S.q.best || 0, secs: Math.round(S.secs || 0),
+      elo: played ? d.avg : 0, ws: d.ws.b, perf: d.pf, taken: S.caps || 0, coins: LP.rewards && LP.rewards.tokens ? LP.rewards.tokens() : 0, prof: JSON.stringify(selfCard()),
+    };
   }
   function addTime(secs) { touch(); S.secs += Math.max(0, secs || 0); save(); }
-  LP.stats = { event, puzzle, open, render, snapshot, addTime };
+  LP.stats = { event, puzzle, open, render, snapshot, addTime, viewHtml, selfData, selfCard, mountProfile };
 })();
