@@ -1,0 +1,19 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Supabase test</title>
+<style>body{font:16px system-ui;background:#111;color:#eee;padding:16px}pre{white-space:pre-wrap;word-break:break-all;background:#222;padding:10px;border-radius:8px}b.ok{color:#6c6}b.no{color:#f66}</style></head><body>
+<h3>Local Pieces connection test</h3><div id="o"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="supabase-config.js"></script>
+<script>
+const o=document.getElementById('o');
+const line=(ok,t,x)=>{o.insertAdjacentHTML('beforeend','<p><b class="'+(ok?'ok':'no')+'">'+(ok?'OK':'FAIL')+'</b> '+t+(x?'<pre>'+String(x).replace(/</g,'&lt;')+'</pre>':'')+'</p>');};
+line(!!window.supabase,'supabase-js library loaded');
+line(!!window.SUPABASE_URL,'supabase-config.js: URL',window.SUPABASE_URL);
+line(!!window.SUPABASE_ANON_KEY,'supabase-config.js: key',(window.SUPABASE_ANON_KEY||'').slice(0,22)+'...');
+(async()=>{try{
+  const c=window.supabase.createClient(window.SUPABASE_URL,window.SUPABASE_ANON_KEY);
+  const r=await c.rpc('api',{p:{a:'ping'}});
+  line(!r.error&&r.data&&r.data.ok,'ping the database',JSON.stringify(r.error||r.data));
+  const g=await c.from('games').select('id').limit(1);
+  line(!g.error,'read the games table (needed for spectating and live moves)',JSON.stringify(g.error||g.data));
+}catch(e){line(false,'error',e&&e.message)}})();
+</script></body></html>
