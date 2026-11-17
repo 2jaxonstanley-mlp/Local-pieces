@@ -15,5 +15,11 @@ line(!!window.SUPABASE_ANON_KEY,'supabase-config.js: key',(window.SUPABASE_ANON_
   line(!r.error&&r.data&&r.data.ok,'ping the database',JSON.stringify(r.error||r.data));
   const g=await c.from('games').select('id').limit(1);
   line(!g.error,'read the games table (needed for spectating and live moves)',JSON.stringify(g.error||g.data));
+
+  const key='localPieces.ptk'; let k=''; try{k=localStorage.getItem(key)||''}catch(e){}
+  line(k.length>=16,'this browser has a player key (made when the site first sends something)',k?k.slice(0,6)+'...':'none yet');
+  let pid=''; try{pid=localStorage.getItem('localPieces.pid')||''}catch(e){}
+  line(!!pid,'this browser has a player id (the main site makes it)',pid||'none: open the main site first, in this same browser');
+  if(pid&&k){ const h=await c.rpc('api',{p:{a:'hb',pid:pid,ptk:k}}); line(!h.error&&h.data&&typeof h.data.online==='number','heartbeat as you',JSON.stringify(h.error||h.data)); }
 }catch(e){line(false,'error',e&&e.message)}})();
 </script></body></html>
