@@ -842,7 +842,7 @@
     if (!R.bar) R.bar = LP.evalBar.attach(wrap);
     if (R.bar) {
       const fin = R.ply >= R.total && R.total && R.entry.winner;
-      R.bar.set(fin ? (R.entry.winner === 'w' ? 1 : 0) : whiteWp(R.ply), flipped, fin ? 0 : whiteMate(R.ply));
+      R.bar.set(fin ? (R.entry.winner === 'w' ? 1 : 0) : whiteWp(R.ply), flipped, fin ? 0 : whiteMate(R.ply), !!fin);
     }
   }
   function updateEval() {
