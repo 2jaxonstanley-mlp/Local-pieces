@@ -2033,6 +2033,7 @@ body[data-bgk="stars"]::after { background-image: radial-gradient(1px 1px at 8% 
 .evbar .ev-lab { bottom: 0; }
 .evbar.flip .ev-lab { bottom: auto; top: 0; }
 .evbar .ev-lab.on-white { color: #222; }
+.evbar .ev-lab.mate { font-size: 8px; font-weight: 900; }
 .evbar .ev-lab.on-black { color: #eee; bottom: auto; top: 0; }
 .evbar.flip .ev-lab.on-black { top: auto; bottom: 0; }
 
@@ -2131,3 +2132,44 @@ body[data-bgk="stars"]::after { background-image: radial-gradient(1px 1px at 8% 
 .fb-fn { font-size: .8rem; opacity: .7; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fb-err { color: #ff6b6b; font-size: .85rem; margin-top: .6rem; }
 .fb-sheet .row { margin-top: 1rem; }
+
+/* ---- Analyze: the main menu's look (cards, icon tiles, labels, white buttons, same background) ---- */
+#analyze .lb-wrap.an-wrap { max-width: 460px; margin: 0 auto; padding: .4rem 1.25rem 3rem; }
+.an-label { display: flex; align-items: baseline; gap: .7rem; padding: .35rem .2rem .7rem; }
+.an-label .mgrp-t::before { content: ''; display: inline-block; width: .38rem; height: .38rem; margin-right: .55rem; border-radius: 50%; background: #fff; box-shadow: 0 0 8px rgba(255,255,255,.7); vertical-align: .12em; }
+.an-card, .an-weak, .an-empty { background: linear-gradient(135deg, var(--panel-2), var(--panel) 60%); border: 1px solid var(--line); border-radius: 14px; box-shadow: none; }
+.an-card { margin-top: .75rem; padding: .95rem 1.1rem; gap: .6rem; transition: border-color .15s, box-shadow .15s; }
+.an-card:hover { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; transform: none; }
+.an-row { display: flex; align-items: center; gap: 1rem; }
+.an-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .05rem; }
+.an-mode { font-size: 1.3rem; font-weight: 700; }
+.an-who { color: var(--muted); font-size: 1rem; } .an-res { font-size: .9rem; }
+.an-chip { background: color-mix(in srgb, var(--accent, #7cc4ff) 14%, var(--bg)); border: 1px solid color-mix(in srgb, var(--accent, #7cc4ff) 32%, transparent); }
+.an-chip.dim { background: none; border-color: transparent; }
+.an-btns .btn { border-radius: 12px; }
+.an-weak { margin-top: .75rem; margin-bottom: 0; }
+.an-rtbox { margin-bottom: 0; }
+.an-bar { background: var(--sunk, var(--bg)); border: 1px solid var(--line); }
+.an-bar i { background: linear-gradient(90deg, #7cc4ff, #a8e0ff); }
+
+/* review screen: same background and white buttons as the menu */
+#review { --teal: #7cc4ff; --teal-d: #4a9fd8; --teal-l: #bfe3ff; }
+#review.active { background: radial-gradient(120% 55% at 50% 0, #2a2a2a 0, var(--bg) 62%); }
+.rv-head { background: linear-gradient(var(--bg) 70%, transparent); }
+.rv-ctl { background: linear-gradient(rgba(31,31,31,0), var(--bg) 38%); }
+.rv-back { background: var(--panel-2); border: 1px solid var(--line); }
+.rv-tl { background: var(--panel); border: 1px solid var(--line); box-shadow: none; }
+.rv-bubble { background: linear-gradient(135deg, var(--panel-2), var(--panel) 60%); border: 1px solid var(--line); border-radius: 14px; box-shadow: none; }
+.rv-cap, .rv-alts-h { color: var(--teal); }
+.rv-text { color: #fff; } .rv-open { color: var(--muted); }
+.rv-pill { border: 1px solid var(--line-2); color: #fff; background: var(--panel); }
+.rv-pill:hover { border-color: var(--teal); background: var(--panel-2); } .rv-pill.hot { background: #fff; color: #111; border-color: #fff; }
+.rv-arrow { border: 1px solid var(--line-2); background: var(--panel-2); color: #fff; border-radius: 12px; }
+.rv-main { background: linear-gradient(180deg, #fff, #e4e4e4); color: #111; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,.3), 0 0 0 1px rgba(255,255,255,.65) inset; }
+.rv-main:active { transform: scale(.985); box-shadow: 0 8px 20px rgba(0,0,0,.3); }
+.rv-main.again { background: linear-gradient(180deg, #f0a233, #d9821a); color: #1a1100; box-shadow: none; }
+.rv-skip, .rv-exp { border: 1px solid var(--line-2); color: #fff; border-radius: 12px; background: var(--panel); }
+.rv-alt { border: 1px solid var(--line); background: var(--panel); border-radius: 12px; }
+.rv-alt:hover { background: var(--panel-2); border-color: var(--teal); }
+.rv-g-plot, .rv-pt { background: var(--panel); border: 1px solid var(--line); }
+.rv-board-wrap { border-radius: 10px; }

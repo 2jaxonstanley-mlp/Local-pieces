@@ -22,13 +22,14 @@
     }
     const fill = el.querySelector('.ev-fill'), lab = el.querySelector('.ev-lab');
     return {
-      set(w, flipped) {
+      set(w, flipped, mate) {
         w = Math.max(0, Math.min(1, Number.isFinite(w) ? w : 0.5));
         el.classList.remove('hidden');
         el.classList.toggle('flip', !!flipped);
         fill.style.height = (w * 100).toFixed(1) + '%';
-        lab.textContent = label(w);
-        lab.className = 'ev-lab ' + (w >= 0.5 ? 'on-white' : 'on-black');
+        if (mate) { w = mate > 0 ? 1 : 0; fill.style.height = (w * 100) + '%'; }
+        lab.textContent = mate ? 'M' + Math.abs(mate) : label(w);
+        lab.className = 'ev-lab ' + (w >= 0.5 ? 'on-white' : 'on-black') + (mate ? ' mate' : '');
       },
       hide() { el.classList.add('hidden'); },
       remove() { el.remove(); },

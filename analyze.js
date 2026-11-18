@@ -548,10 +548,13 @@
         const cols = sidesOf(e).filter((c) => sum[c] && sum[c].n);
         chips = cols.map((c) => `<span class="an-chip">${h === c ? 'You' : esc(nameOf(e, c))}: <b>${sum[c].acc}%</b></span>`).join('');
       }
-      return `<div class="an-card" data-id="${esc(e.id)}">
-        <div class="an-top"><b class="an-mode">${esc(modeLabel(e))}</b><span class="an-date">${when(e.date)}</span></div>
-        <div class="an-who">${describe(e)}</div>
-        <div class="an-res">${esc(resultLine(e))}</div>
+      return `<div class="an-card" data-id="${esc(e.id)}" style="--accent:#7cc4ff">
+        <div class="an-row"><span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m21 21-5.2-5.2M7.5 12.5l2-3 2 2 2-3"/></svg></span>
+          <div class="an-main">
+            <div class="an-top"><b class="an-mode">${esc(modeLabel(e))}</b><span class="an-date">${when(e.date)}</span></div>
+            <div class="an-who">${describe(e)}</div>
+            <div class="an-res">${esc(resultLine(e))}</div>
+          </div></div>
         ${chips ? `<div class="an-chips">${chips}<span class="an-chip dim">accuracy</span></div>` : ''}
         <div class="an-btns"><button class="btn primary an-open">${done ? 'Review' : 'Analyze'}</button><button class="btn an-del" aria-label="Delete">Delete</button></div>
       </div>`;
@@ -821,13 +824,26 @@
     }
     return 0.5;
   }
+  /** Forced mate in the position after n moves, as moves (+ White mates, - Black mates), or 0. Only read where the score is exact. */
+  function whiteMate(n) {
+    const an = R.an.plies, mv = (i) => (i % 2 === 0 ? 'w' : 'b');
+    const m = (s, off) => { if (s == null || Math.abs(s) < MATE - 200) return 0; const pl = Math.max(1, MATE - Math.abs(s) - off); return Math.ceil(pl / 2) * (s > 0 ? 1 : -1); };
+    let k = 0, s = null, who = null;
+    if (an[n] && an[n].bs != null && Math.abs(an[n].bs) >= MATE - 200) { k = m(an[n].bs, 0); who = mv(n); }
+    else if (n > 0 && an[n - 1] && an[n - 1].ps != null && Math.abs(an[n - 1].ps) >= MATE - 200) { k = m(an[n - 1].ps, 1); who = mv(n - 1); }
+    if (!k) return 0;
+    return who === 'w' ? k : -k;
+  }
   /** The eval bar beside the board (chess games only): White's chance at the position shown. */
   function updateEvalBar() {
     const wrap = document.querySelector('#review .rv-board-wrap'), old = wrap && wrap.querySelector(':scope > .evbar');
     if (!R || R.kind !== 'chess' || !LP.evalBar) { if (old) old.classList.add('hidden'); return; }
     if (!wrap) return;
     if (!R.bar) R.bar = LP.evalBar.attach(wrap);
-    if (R.bar) R.bar.set(R.ply >= R.total && R.total && R.entry.winner ? (R.entry.winner === 'w' ? 1 : 0) : whiteWp(R.ply), flipped);
+    if (R.bar) {
+      const fin = R.ply >= R.total && R.total && R.entry.winner;
+      R.bar.set(fin ? (R.entry.winner === 'w' ? 1 : 0) : whiteWp(R.ply), flipped, fin ? 0 : whiteMate(R.ply));
+    }
   }
   function updateEval() {
     const box = $('#rv-eval');
@@ -1571,7 +1587,7 @@
         <span class="pz-head"><span class="mode-title">Analyze</span></span>
         <span class="header-spacer"></span>
       </header>
-      <div class="lb-wrap"><p class="sg-lead">Your analysed games. Open one to get a lesson: what you did well, what to fix, and a chance to try again from the key positions.</p><div id="an-list"></div></div>`;
+      <div class="lb-wrap an-wrap"><div class="an-label"><span class="mgrp-t">Your games</span><span class="mgrp-s">Open one for a lesson and a retry</span></div><div id="an-list"></div></div>`;
     const rv = document.createElement('section');
     rv.id = 'review'; rv.className = 'page';
     rv.innerHTML = `<div class="rv-wrap">
