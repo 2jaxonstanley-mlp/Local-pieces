@@ -49,6 +49,19 @@
     if (Array.isArray(a.sides) && a.sides.length) return a.sides;
     return a.both ? ['w', 'b'] : humanOf(e) ? [humanOf(e)] : ['w', 'b'];
   };
+  /** Brilliant and best moves in a review, for the leaderboards: the person's own moves, or both sides when it was not one person against the computer. */
+  function foundIn(e) {
+    if (!e || !e.an || !e.an.plies || isRush(e)) return null;
+    const mine = humanOf(e) ? [humanOf(e)] : ['w', 'b'];
+    let b = 0, g = 0;
+    Object.keys(e.an.plies).forEach((k) => {
+      const i = +k, p = e.an.plies[k];
+      if (!p || !mine.includes(i % 2 === 0 ? 'w' : 'b')) return;
+      if (p.r === 'brilliant') b++; else if (p.r === 'best') g++;
+    });
+    return { b, g };
+  }
+  function countFound(e) { try { const f = foundIn(e); if (f && LP.stats && LP.stats.analysed) LP.stats.analysed(e.id, f.b, f.g); } catch (x) { /* ignore */ } }
   const addSides = (an, sd) => { const set = new Set(an.sides || []); (sd === 'both' ? ['w', 'b'] : [sd]).forEach((c) => set.add(c)); an.sides = ['w', 'b'].filter((c) => set.has(c)); an.both = an.sides.length === 2; };
   const nMoves = (e) => (isRush(e) ? e.events.length : e.moves.length);
 
@@ -1066,7 +1079,7 @@
     if (my !== token) return;
     LP.closeSheet();
     if (!an) return;
-    e.an = an; put(e); refreshMenu();
+    e.an = an; put(e); refreshMenu(); countFound(e);
     try { if (LP.rewards) LP.rewards.event('analyzed'); } catch (x) { /* ignore */ }
     enter(e);
   }
@@ -1623,5 +1636,6 @@
 
   build();
   refreshMenu();
+  setTimeout(() => { try { all().forEach(countFound); } catch (x) { /* ignore */ } }, 2500);   // reviews made before this existed count too
   LP.analyze = { begin, refreshMenu, show: showLibrary, humanOf, entries };
 })();

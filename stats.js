@@ -34,6 +34,20 @@
   try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.v === 1) S = Object.assign(blank(), s); } catch (e) { /* ignore */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } };
   const touch = () => { if (!S.since) S.since = Date.now(); };
+  // brilliant and best moves found in Analyze reviews, one entry per analysed game (kept apart from S, which is swapped while another player's profile is open)
+  const AQKEY = 'localPieces.analysedMoves';
+  let AQ = {};
+  try { const a = JSON.parse(localStorage.getItem(AQKEY)); if (a && typeof a === 'object') AQ = a; } catch (e) { /* ignore */ }
+  /** Record what Analyze found in one game: re-analysing a game replaces its numbers, so nothing is counted twice. */
+  function analysed(id, brilliant, best) {
+    if (!id) return;
+    const o = AQ[id];
+    if (o && o.b === brilliant && o.g === best) return;
+    AQ[id] = { b: brilliant | 0, g: best | 0 };
+    try { localStorage.setItem(AQKEY, JSON.stringify(AQ)); } catch (e) { /* ignore */ }
+    if (LP.global && LP.global.syncStats) setTimeout(() => LP.global.syncStats(), 600);
+  }
+  const aqSum = (k) => Object.keys(AQ).reduce((a, id) => a + ((AQ[id] && AQ[id][k]) || 0), 0);
 
   function event(name, p) {
     if (name === 'capture') { S.caps += typeof p === 'number' ? p : 1; save(); return; }
@@ -322,10 +336,10 @@
   function snapshot() {
     const d = selfData(), P = LP.profile, played = P && P.played ? P.played() : 0;
     return {
-      cap: S.rush.reduce((m, r) => Math.max(m, r.score || 0), 0) || (typeof rushBestOld === 'function' ? rushBestOld() : 0), brill: S.q.brilliant || 0, best: S.q.best || 0, secs: Math.round(S.secs || 0),
+      cap: S.rush.reduce((m, r) => Math.max(m, r.score || 0), 0) || (typeof rushBestOld === 'function' ? rushBestOld() : 0), brill: aqSum('b'), best: aqSum('g'), secs: Math.round(S.secs || 0),
       elo: played ? d.avg : 0, ws: d.ws.b, perf: d.pf, taken: S.caps || 0, coins: LP.rewards && LP.rewards.tokens ? LP.rewards.tokens() : 0, prof: JSON.stringify(selfCard()),
     };
   }
   function addTime(secs) { touch(); S.secs += Math.max(0, secs || 0); save(); }
-  LP.stats = { event, puzzle, open, render, snapshot, addTime, viewHtml, selfData, selfCard, mountProfile };
+  LP.stats = { analysed, event, puzzle, open, render, snapshot, addTime, viewHtml, selfData, selfCard, mountProfile };
 })();
