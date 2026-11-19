@@ -12,12 +12,16 @@
     brilliant:   { id: 'brilliant',   phrase: 'brilliant',            label: 'Brilliant',    sym: '!!', color: '#26c9c3' },
     great:       { id: 'great',       phrase: 'a great move',         label: 'Great move',   sym: '!',  color: '#26c2a3' },
     best:        { id: 'best',        phrase: 'the best move',        label: 'Best',         sym: '★', color: '#96bc4b' },
+    onlymove:    { id: 'onlymove',    phrase: 'the only move',        label: 'Only move',    sym: '!',  color: '#3fc6e8' },
+    excellent:   { id: 'excellent',   phrase: 'an excellent move',    label: 'Excellent',    sym: '✓',  color: '#6fbf73' },
     good:        { id: 'good',        phrase: 'a good move',          label: 'Good',         sym: '!',  color: '#2888aa' },
     book:        { id: 'book',        phrase: 'a book move',          label: 'Book',         sym: 'B',  color: '#c9a56b' },
     interesting: { id: 'interesting', phrase: 'interesting',          label: 'Interesting',  sym: '!?', color: '#a050aa' },
     inaccuracy:  { id: 'inaccuracy',  phrase: 'an inaccuracy',        label: 'Inaccuracy',   sym: '?!', color: '#f7c631' },
     mistake:     { id: 'mistake',     phrase: 'a mistake',            label: 'Mistake',      sym: '?',  color: '#e58f2a' },
     blunder:     { id: 'blunder',     phrase: 'a blunder',            label: 'Blunder',      sym: '??', color: '#ca3431' },
+    missedmate:  { id: 'missedmate',  phrase: 'a missed mate',        label: 'Missed mate',  sym: '#', cross: true, color: '#d6263b' },
+    throw:       { id: 'throw',       phrase: 'a thrown-away win',    label: 'Threw the win', sym: '↓',  color: '#9c1d2c' },
     missedwin:   { id: 'missedwin',   phrase: 'a missed win',         label: 'Missed win',   sym: 'X',  color: '#b41e28' },
     novelty:     { id: 'novelty',     phrase: 'a novelty',            label: 'Novelty',      sym: 'N',  color: '#96969a' },
     forced:      { id: 'forced',      phrase: 'forced',               label: 'Forced',       sym: '□',  color: '#78787d' },
@@ -218,14 +222,19 @@
     const top = same(A.top[0].move, mv) || loss <= 0.004;
 
     // missed a forced mate or a decisive win
-    if ((B > MATE - 100 && !(P > MATE - 100) && wP >= 0.3) || (wB >= 0.9 && wP >= 0.5 && wP < 0.72 && loss >= 0.2)) return RATINGS.missedwin;
+    if (B > MATE - 100 && !(P > MATE - 100) && wP >= 0.3) return RATINGS.missedmate;           // a forced mate was there and was not played
+    if (wB >= 0.75 && wP < 0.45 && loss >= 0.25) return RATINGS.throw;                         // was winning, now it is level or worse
+    if (wB >= 0.9 && wP >= 0.5 && wP < 0.72 && loss >= 0.2) return RATINGS.missedwin;
 
     let r = null;
     if (loss <= 0.008) {
       if (bigSac && wP >= 0.42 && f.before < 500) r = RATINGS.brilliant;
+      else if (top && A.top.length > 1 && gap >= 0.3 && wB >= 0.2 && wB < 0.97 && A.legal > 2 && !f.captured) r = RATINGS.onlymove;   // every other move gives away 30%+ winning chances
       else if (top && gap >= 0.13 && wB >= 0.3 && wB < 0.97 && A.legal > 2 && !f.captured) r = RATINGS.great;
       else if (top) r = RATINGS.best;                              // the engine's own choice is always Best (it used to need to stand out from the next move)
+      else r = RATINGS.excellent;                                  // not the engine's pick but within a hair of it
     } else if (loss <= 0.07 && sac && wP >= 0.38 && !f.captured) r = RATINGS.interesting;
+    else if (loss <= 0.02) r = RATINGS.excellent;
     else if (loss <= 0.03) r = RATINGS.good;
     else if (loss <= 0.05) r = null;
     else if (loss <= 0.10) r = RATINGS.inaccuracy;                 // win chance given away: 5% inaccuracy, 10% mistake, 20% blunder
@@ -380,7 +389,7 @@
       im.src = x.img;
     }
   }
-  const iconHtml = (x) => (x.hasImg ? `<img class="ri" src="${x.img}" alt="${x.label}">` : x.sym.replace(/&/g, '&amp;').replace(/</g, '&lt;'));
+  const iconHtml = (x) => (x.hasImg ? `<img class="ri" src="${x.img}" alt="${x.label}">` : x.cross ? `<span class="ri-cross">${x.sym}</span>` : x.sym.replace(/&/g, '&amp;').replace(/</g, '&lt;'));
 
   window.MoveRating = { facts, classify, bookOf, rate, polish, sacOrder, clone, iconHtml, openingName, isBook, analyse, wp, MATE, RATINGS, get: (id) => RATINGS[id] || null };
 })();

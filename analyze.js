@@ -67,8 +67,8 @@
 
   /* ------------------------------------------------------------------ chess helpers */
   const EX = window.Explain, AC = window.AnalyzeCore;
-  const TEACH = { inaccuracy: 1, mistake: 1, blunder: 1, missedwin: 1 };      // the ratings that get a "try to find the fix" step
-  const WV = '5';                                                              // version of the background analysis files (bump it to make browsers fetch them again)
+  const TEACH = { inaccuracy: 1, mistake: 1, blunder: 1, missedwin: 1, missedmate: 1, throw: 1 };      // the ratings that get a "try to find the fix" step
+  const WV = '6';                                                              // version of the background analysis files (bump it to make browsers fetch them again)
 
   /** Who is talking about whom: "You left your pawn..." or "Alice left their pawn...". */
   function voice(e, color) {
@@ -84,7 +84,7 @@
     const c0 = MR.clone(g);
     const m = c0.legalMoves().find((x) => same(x, mv)) || mv;
     if (TEACH[p.r]) {
-      const lead = { inaccuracy: 'Inaccuracy.', mistake: 'Mistake.', blunder: 'Blunder!', missedwin: 'Missed win!' }[p.r];
+      const lead = { inaccuracy: 'Inaccuracy.', mistake: 'Mistake.', blunder: 'Blunder!', missedwin: 'Missed win!', missedmate: 'Missed mate!', throw: 'You let the win slip.' }[p.r];
       return EX.mistake({ g: c0, mv: m, p, vc, lead });
     }
     if (p.r) return EX.praise({ g: c0, mv: m, p, vc }, p.r);
@@ -187,6 +187,7 @@
       }
     }
     summarise(e, an);
+    try { enrich(e, an); } catch (x) { /* the extras are optional */ }
     addSides(an, sd);
     an.done = true;
     return an;
@@ -879,7 +880,32 @@
   function buildGraph() {
     const box = $('#rv-graph');
     if (!box) return;
-    if (!R || R.kind !== 'rush') { box.classList.add('hidden'); box.innerHTML = ''; return; }
+    if (!R) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+    if (R.kind === 'chess') {   // White's winning chances after every move; tap it to jump to that point
+      if (!R.total) { box.classList.add('hidden'); return; }
+      box.classList.remove('hidden');
+      const n = R.total, wv = [];
+      for (let k = 0; k <= n; k++) wv.push(whiteWp(k));
+      const X = (k) => (n ? k / n * 100 : 0), Y = (v) => 4 + (1 - v) * 92;
+      const line = wv.map((v, k) => X(k).toFixed(2) + ',' + Y(v).toFixed(2)).join(' ');
+      const area = '0,50 ' + line + ' 100,50';
+      let dots = '';
+      Object.keys(R.an.plies).forEach((k) => {
+        const i = +k, pl = R.an.plies[k];
+        const mark = pl.r && ({ inaccuracy: 1, mistake: 1, blunder: 1, missedwin: 1, missedmate: 1, throw: 1, brilliant: 1, great: 1, onlymove: 1 })[pl.r];
+        const turn = pl.x && pl.x.includes('turn');
+        if (!mark && !turn) return;
+        const rt = MR.get(pl.r) || { color: '#e5484d' };
+        dots += `<i class="rv-gd${turn ? ' turn' : ''}" style="left:${X(i + 1)}%;top:${Y(wv[i + 1])}%;background:${turn ? '#e5484d' : rt.color}" aria-hidden="true"></i>`;
+      });
+      box.innerHTML = `<div class="rv-g-h"><span>Winning chances</span><small>tap to jump · white on top</small></div>
+        <div class="rv-g-plot rv-g-chess"><svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon points="${area}" class="rv-g-area"/><line x1="0" x2="100" y1="50" y2="50" class="rv-g-zero"/><polyline points="${line}" class="rv-g-line"/></svg><i class="rv-g-cur"></i>${dots}</div>`;
+      const plot = box.querySelector('.rv-g-plot');
+      plot.onclick = (ev) => { const r = plot.getBoundingClientRect(); goPly(Math.round(Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)) * n), true); };
+      markGraph();
+      return;
+    }
+    if (R.kind !== 'rush') { box.classList.add('hidden'); box.innerHTML = ''; return; }
     box.classList.remove('hidden');
     const sc = R.frames.map((f) => f.score), n = sc.length - 1;
     let mn = Math.min(0, ...sc), mx = Math.max(0, ...sc);
@@ -963,7 +989,7 @@
   /** o = { cap, text | html, pills: [{ label, fn, primary }], rate } */
   function say(o) {
     const b = $('#rv-bubble');
-    b.innerHTML = (o.cap ? `<div class="rv-cap">${esc(o.cap)}</div>` : '') + (o.html || `<p class="rv-text">${esc(o.text || '')}</p>`) + '<div class="rv-pills"></div>';
+    b.innerHTML = (o.cap ? `<div class="rv-cap">${esc(o.cap)}</div>` : '') + (o.html || `<p class="rv-text">${esc(o.text || '')}</p>`) + (o.ply != null && R && R.an && R.an.plies ? tagsHtml(R.an.plies[o.ply]) : '') + '<div class="rv-pills"></div>';
     const box = b.querySelector('.rv-pills');
     (o.pills || []).forEach((a) => {
       const x = document.createElement('button');
@@ -1015,15 +1041,25 @@
   function canStep() { return !!R && (R.phase === 'intro' || R.phase === 'info' || R.phase === 'passed' || R.phase === 'end'); }
   function stepView(d) {
     if (!canStep()) return;
-    const n = Math.max(0, Math.min(R.total, R.ply + d));
-    if (n === R.ply) return;
-    setPly(n, true);
+    goPly(Math.max(0, Math.min(R.total, R.ply + d)), true);
+  }
+  /** Look at the position after n moves (browsing). A weak move also shows the better move (green) and what it let through (red). */
+  function goPly(n, animate) {
+    if (!canStep() || n === R.ply) return;
+    setPly(n, animate);
     R.showResign = false;
     const i = n - 1;
     if (i < 0) { say({ cap: 'Start of the game', text: 'The starting position. Use the arrows to look through the game.' }); return; }
     const p = R.an.plies[i], r = ratingAt(i);
     const san = R.entry.sans && R.entry.sans[i] ? ' · ' + R.entry.sans[i] : '';
-    say({ cap: capFor(i) + san, text: p ? noteText(i, true) : 'This move was not part of the analysis.', rate: r || undefined });
+    say({ cap: capFor(i) + san, text: p ? noteText(i, true) : 'This move was not part of the analysis.', rate: r || undefined, ply: i });
+    if (R.kind === 'chess' && p && BADR[p.r]) {
+      const ar = [];
+      if (p.b) ar.push({ a: toIdx(p.b.f), b: toIdx(p.b.t), c: 'g' });
+      const th = p.n && p.n.thr;
+      if (th) ar.push({ a: th.a, b: th.b, c: 'r' });
+      R.arrows = ar; render();
+    }
   }
 
   const capFor = (i) => (R.kind === 'chess' ? 'Move ' + (Math.floor(i / 2) + 1) + (i % 2 ? ' (Black)' : ' (White)') : 'Move ' + (i + 1));
@@ -1104,8 +1140,8 @@
   function buildMoments() {
     const e = R.entry, an = R.an, out = [];
     const keys = Object.keys(an.plies).map(Number).sort((a, b) => a - b);
-    const sevOf = (p) => ({ missedwin: 5, blunder: 4, mistake: 3, inaccuracy: 2 }[p.r] || 0);
-    const praiseRank = { brilliant: 6, great: 5, novelty: 4, interesting: 3, best: 2, matewhite: 6, mateblack: 6, good: 1 };
+    const sevOf = (p) => ({ missedmate: 6, missedwin: 5, throw: 5, blunder: 4, mistake: 3, inaccuracy: 2 }[p.r] || 0);
+    const praiseRank = { brilliant: 6, onlymove: 5, great: 5, novelty: 4, interesting: 3, best: 2, matewhite: 6, mateblack: 6, good: 1 };
     let teach = keys.filter((i) => sevOf(an.plies[i]) > 0);
     if (teach.length > 8) teach = teach.sort((a, b) => sevOf(an.plies[b]) - sevOf(an.plies[a]) || a - b).slice(0, 8);
     let praise = keys.filter((i) => praiseRank[an.plies[i].r]);
@@ -1189,7 +1225,7 @@
       const text = moveWords(n);                                          // (R.G is at move n now)
       setPly(n + 1, true);
       R.cursor = n + 1;
-      say({ cap: step + ' · ' + capFor(n), text, rate: n === i ? ratingAt(i) : null });
+      say({ cap: step + ' · ' + capFor(n), text, rate: n === i ? ratingAt(i) : null, ply: n === i ? i : null });
       let hold = 1250;
       if (n === i && teach) {
         const th = R.an.plies[i].n && R.an.plies[i].n.thr;
@@ -1252,9 +1288,16 @@
     const p = R.an.plies[i], text = noteText(i, true);
     R.phase = 'passed';
     R.arrows = [];
-    if (R.kind === 'rush' && p && p.pg) { say({ cap: step + ' · ' + capFor(i), html: `<p class="rv-text">${esc(text)}</p>${rushExtras(i, p)}`, rate: ratingAt(i) }); bindAlts(i); }
-    else say({ cap: step + ' · ' + capFor(i), text, rate: ratingAt(i) });
+    if (R.kind === 'rush' && p && p.pg) { say({ cap: step + ' · ' + capFor(i), html: `<p class="rv-text">${esc(text)}</p>${rushExtras(i, p)}`, rate: ratingAt(i), ply: i }); bindAlts(i); }
+    else say({ cap: step + ' · ' + capFor(i), text, rate: ratingAt(i), ply: i });
     render();
+  }
+
+  /** A pill that jumps to the move where the game swung the most. */
+  function turnPill() {
+    const t = R && R.kind === 'chess' && R.an && R.an.x && R.an.x.turn;
+    if (!t) return [];
+    return [{ label: 'Turning point', fn: () => { if (!canStep()) return; R.mi = -1; markTimeline(); const n = t.i + 1; if (n === R.ply) setPly(0, false); goPly(n, false); } }];
   }
 
   function finishLesson() {
@@ -1263,19 +1306,88 @@
     R.phase = 'end';
     markTimeline();
     setPly(R.total, false);
-    say({ cap: 'Lesson complete', html: summaryHtml(R.entry, R.an.sum) + '<p class="rv-text">Well done for working through it.</p>', pills: [{ label: 'Review again', primary: true, fn: () => { R.mi = -1; markTimeline(); showIntro(); } }].concat(bothPill()) });
+    say({ cap: 'Lesson complete', html: summaryHtml(R.entry, R.an.sum) + '<p class="rv-text">Well done for working through it.</p>', pills: [{ label: 'Review again', primary: true, fn: () => { R.mi = -1; markTimeline(); showIntro(); } }].concat(turnPill(), bothPill()) });
+  }
+
+
+  /* ------------------------------------------------------------------ extras: badges, phases, turning point, streak, performance, piece report */
+  const XV = 1;
+  const STRONG = { brilliant: 1, great: 1, best: 1, onlymove: 1 };
+  const BADR = { inaccuracy: 1, mistake: 1, blunder: 1, missedwin: 1, missedmate: 1, throw: 1 };
+  const PCN = { 1: 'pawn', 2: 'knight', 3: 'bishop', 4: 'rook', 5: 'queen', 6: 'king' };
+  const clampS = (s) => Math.max(-1000, Math.min(1000, Math.abs(s) > MATE - 200 ? (s > 0 ? 1000 : -1000) : s));
+  const phaseOf = (i) => { const mn = Math.floor(i / 2) + 1; return mn <= 10 ? 'o' : mn <= 30 ? 'm' : 'e'; };
+  /** Works out the extras from the stored analysis (also run on older analyses, so they get them too). Saved as an.x and a tag list p.x on each move. */
+  function enrich(e, an) {
+    if (!e || isRush(e) || !an || !an.plies) return;
+    const keys = Object.keys(an.plies).map(Number).sort((p, q) => p - q);
+    const side = () => ({ n: 0, cp: 0, ph: { o: [0, 0], m: [0, 0], e: [0, 0] }, streak: 0, cur: 0, pcs: {}, bad: 0 });
+    const x = { v: XV, w: side(), b: side(), turn: null };
+    let pcAt = null;
+    try {   // the piece that made each move, from replaying the game
+      const g = AC.startPosition({ mode: e.mode, fen: e.fen || null, secrets: { w: e.secrets.w, b: e.secrets.b }, moves: e.moves });
+      pcAt = {};
+      for (let i = 0; i < e.moves.length; i++) { const pc = g.board[e.moves[i].from]; pcAt[i] = pc ? pc & 7 : 0; g.makeMove(e.moves[i]); }
+    } catch (err) { pcAt = null; }
+    const base = e.clock && e.clock.base ? e.clock.base : 0;
+    let worst = 0;
+    keys.forEach((i) => {
+      const p = an.plies[i], col = i % 2 === 0 ? 'w' : 'b', s = x[col], tags = [];
+      if (p.bs == null || p.ps == null) return;
+      const loss = wpLoss(p.bs, p.ps);
+      s.n++;
+      s.cp += Math.max(0, Math.min(1000, clampS(p.bs) - clampS(p.ps)));
+      const ph = s.ph[phaseOf(i)]; ph[0] += accOf(loss); ph[1]++;
+      if (STRONG[p.r]) { s.cur++; s.streak = Math.max(s.streak, s.cur); } else if (p.r !== 'book' && p.r !== 'forced') s.cur = 0;
+      if (BADR[p.r]) { s.bad++; if (pcAt && pcAt[i]) s.pcs[pcAt[i]] = (s.pcs[pcAt[i]] || 0) + 1; }
+      const f = p.facts;
+      if (f && p.r && p.r !== 'book' && p.r !== 'forced' && !BADR[p.r] && f.afterQs <= f.before - 150) tags.push('sac');
+      const prev = an.plies[i - 2];
+      if ((STRONG[p.r] || p.r === 'excellent') && prev && prev.ps != null && MR.wp(prev.ps) <= 0.3 && MR.wp(p.ps) >= 0.5) tags.push('comeback');
+      if (BADR[p.r] && e.clk && e.clk[i] && base) { const left = e.clk[i][i % 2]; if (left != null && left <= Math.max(10000, base * 0.1)) tags.push('time'); }
+      if (BADR[p.r] && loss > worst) worst = loss;
+      p.x = tags;
+    });
+    if (worst >= 0.2) { const ti = keys.find((i) => BADR[an.plies[i].r] && wpLoss(an.plies[i].bs, an.plies[i].ps) === worst); if (ti != null) { x.turn = { i: ti, c: ti % 2 === 0 ? 'w' : 'b' }; an.plies[ti].x.push('turn'); } }
+    ['w', 'b'].forEach((c) => {
+      const s = x[c];
+      s.acpl = s.n ? Math.round(s.cp / s.n) : 0;
+      s.perf = s.n >= 6 ? Math.max(400, Math.min(3000, Math.round(3100 * Math.exp(-0.01 * s.acpl) / 50) * 50)) : 0;
+      ['o', 'm', 'e'].forEach((k) => { const q = s.ph[k]; s.ph[k] = q[1] ? { a: Math.round(q[0] / q[1]), n: q[1] } : null; });
+      delete s.cp; delete s.cur;
+    });
+    an.x = x;
+  }
+  const TAGL = { sac: ['Sacrifice', '#e5b93c'], comeback: ['Comeback', '#3fbf6a'], time: ['Time pressure', '#ff8a3d'], turn: ['Turning point', '#e5484d'] };
+  const tagsHtml = (p) => (p && p.x && p.x.length ? '<div class="cc-chips rv-tags">' + p.x.map((t) => TAGL[t] ? `<span class="cc-chip" style="--c:${TAGL[t][1]}">${TAGL[t][0]}</span>` : '').join('') + '</div>' : '');
+  const PHN = { o: 'Opening', m: 'Middlegame', e: 'Endgame' };
+  /** The per-side extras shown under the accuracy: average loss, performance, phases, streak, the piece that errs most. */
+  function extrasHtml(e, c) {
+    const x = e.an && e.an.x, s = x && x[c];
+    if (!s || !s.n) return '';
+    const bits = [];
+    bits.push(`<span class="cc-chip" style="--c:#7cc4ff">avg loss ${s.acpl} cp</span>`);
+    if (s.perf) bits.push(`<span class="cc-chip" style="--c:#c9a0ff">performance ≈ ${s.perf}</span>`);
+    if (s.streak >= 3) bits.push(`<span class="cc-chip" style="--c:#96bc4b">${s.streak} best moves in a row</span>`);
+    const ph = ['o', 'm', 'e'].filter((k) => s.ph[k]);
+    let weak = null;
+    ph.forEach((k) => { if (s.ph[k].n >= 3 && (!weak || s.ph[k].a < s.ph[weak].a)) weak = k; });
+    const phs = ph.length ? `<div class="cc-ph">${ph.map((k) => `<span class="cc-ph-i${k === weak && ph.length > 1 ? ' weak' : ''}"><small>${PHN[k]}</small><b>${s.ph[k].a}%</b></span>`).join('')}</div>` : '';
+    const top = Object.keys(s.pcs).sort((p, q) => s.pcs[q] - s.pcs[p])[0];
+    const pcs = top && s.bad >= 2 ? `<p class="cc-note">Most errors came from ${PCN[top]} moves (${s.pcs[top]} of ${s.bad}).</p>` : '';
+    return `<div class="cc-chips">${bits.join('')}</div>${phs}${pcs}`;
   }
 
   function summaryHtml(e, sum) {
     const h = humanOf(e);
     const cols = ['w', 'b'].filter((c) => sum[c].n);
-    const order = ['brilliant', 'great', 'best', 'good', 'book', 'interesting', 'novelty', 'inaccuracy', 'mistake', 'blunder', 'missedwin'];
+    const order = ['brilliant', 'great', 'onlymove', 'best', 'excellent', 'good', 'book', 'interesting', 'novelty', 'inaccuracy', 'mistake', 'blunder', 'throw', 'missedwin', 'missedmate'];
     return '<div class="cc-sum">' + cols.map((c) => {
       const s = sum[c];
       const who = h === c ? 'You' : nameOf(e, c);
       const chips = order.filter((k) => s.c[k]).map((k) => { const r = MR.get(k); return `<span class="cc-chip" style="--c:${r.color}">${s.c[k]} ${esc(r.label.toLowerCase())}</span>`; }).join('');
       const pts = isRush(e) ? `<div class="cc-chips"><span class="cc-chip" style="--c:#6fd08c">${sgn(s.got)} scored</span><span class="cc-chip" style="--c:${s.lost > 0.05 ? '#e58f2a' : '#6fd08c'}">${fmtN(s.lost)} lost to better moves</span></div>` : '';
-      return `<div class="cc-row"><b>${esc(who)}</b><span class="cc-acc">${s.acc}%<small>accuracy</small></span></div>${pts}<div class="cc-chips">${chips || '<span class="cc-chip">no standout moves</span>'}</div>`;
+      return `<div class="cc-row"><b>${esc(who)}</b><span class="cc-acc">${s.acc}%<small>accuracy</small></span></div>${pts}<div class="cc-chips">${chips || '<span class="cc-chip">no standout moves</span>'}</div>${isRush(e) ? '' : extrasHtml(e, c)}`;
     }).join('') + '</div>';
   }
 
@@ -1297,7 +1409,7 @@
     say({
       cap: modeLabel(e) + ' · ' + (isRush(e) ? e.score + ' points' : e.result || ''),
       html: `<p class="rv-text">${nm ? 'Tap Begin when you are ready. ' + plural(nm, 'highlight') + ' to look at. Each one replays what really happened, then gives you a chance to find the better move.' : 'Nothing stood out in this game.'}</p>${open}${summaryHtml(e, R.an.sum)}`,
-      pills: bothPill(),
+      pills: turnPill().concat(bothPill()),
     });
   }
 
@@ -1559,6 +1671,7 @@
       R.view = cellsView(R.frames[0].cells, 'w');
     }
     LP.setSides(h === 'b' ? { w: 'p2', b: 'p1' } : { w: 'p1', b: 'p2' });
+    if (R.kind === 'chess' && e.an && (!e.an.x || e.an.x.v !== XV)) { try { enrich(e, e.an); put(e); } catch (x) { /* optional */ } }
     R.moments = buildMoments();
     LP.showPage('review');
     buildBoard();

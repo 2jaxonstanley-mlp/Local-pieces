@@ -9,7 +9,7 @@
   const $ = (s) => document.querySelector(s);
   const esc = LP.esc;
   const KEY = 'localPieces.positions';
-  const MAXP = 30;
+  const MAXP = 200;
   const START = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
   const GLYPH = { k: '♚︎', q: '♛︎', r: '♜︎', b: '♝︎', n: '♞︎', p: '♟︎' };
   const ORDER = ['k', 'q', 'r', 'b', 'n', 'p'];
@@ -17,6 +17,11 @@
   let turn = 'w', castle = { K: true, Q: true, k: true, q: true };
   let brush = 'P';                         // piece letter to place, or 'x' for the eraser
   let flipped = false;
+  let ep = '', hm = 0, fm = 1;             // en passant square ('e3' or ''), half-move clock, move number
+  let curId = null, curName = '';           // the saved position now on the board (so Save can update it in place)
+  let hist = [], hi = -1, restoring = false;   // undo / redo: snapshots of the whole setup
+  let dragFrom = -1, lpT = 0, lpFired = false, lpPos = null;
+  const MR = window.MoveRating;
   let built = false;
   // creating a community puzzle: the same editor with a title, a category, Test and Publish
   const DRAFT = 'localPieces.communityDraft';
@@ -46,7 +51,7 @@
       rows.push(row);
     }
     const cs = (castle.K ? 'K' : '') + (castle.Q ? 'Q' : '') + (castle.k ? 'k' : '') + (castle.q ? 'q' : '');
-    return rows.join('/') + ' ' + turn + ' ' + (cs || '-') + ' - 0 1';
+    return rows.join('/') + ' ' + turn + ' ' + (cs || '-') + ' ' + (ep || '-') + ' ' + hm + ' ' + fm;
   }
   function fromFen(fen) {
     const probe = new window.Chess();
@@ -62,6 +67,9 @@
     turn = parts[1] === 'b' ? 'b' : 'w';
     const cs = parts[2] || '-';
     castle = { K: cs.includes('K'), Q: cs.includes('Q'), k: cs.includes('k'), q: cs.includes('q') };
+    ep = /^[a-h][36]$/.test(parts[3] || '') ? parts[3] : '';
+    hm = Math.max(0, Math.min(99, parseInt(parts[4], 10) || 0));
+    fm = Math.max(1, Math.min(999, parseInt(parts[5], 10) || 1));
     return '';
   }
   function problems() {
@@ -71,14 +79,81 @@
     return probe.problems();
   }
 
+
+  /* ------------------------------------------------------------------ undo / redo, castling and en passant rules, highlights */
+  const snap = () => ({ c: cells.slice(), t: turn, k: Object.assign({}, castle), e: ep, h: hm, f: fm });
+  const snapKey = (s) => s.c.join(',') + '|' + s.t + s.k.K + s.k.Q + s.k.k + s.k.q + '|' + s.e + '|' + s.h + '|' + s.f;
+  function track() {
+    if (restoring) return;
+    const s = snap();
+    if (hi >= 0 && snapKey(hist[hi]) === snapKey(s)) return;
+    hist = hist.slice(0, hi + 1); hist.push(s);
+    if (hist.length > 150) hist.shift();
+    hi = hist.length - 1;
+    undoState();
+  }
+  function undoState() {
+    const u = $('#ed-undo'), r = $('#ed-redo');
+    if (u) u.disabled = hi <= 0;
+    if (r) r.disabled = hi >= hist.length - 1;
+  }
+  function goHist(d) {
+    const n = hi + d;
+    if (n < 0 || n >= hist.length) return;
+    hi = n;
+    const s = hist[hi];
+    restoring = true;
+    cells = s.c.slice(); turn = s.t; castle = Object.assign({}, s.k); ep = s.e; hm = s.h; fm = s.f; moveSel = -1; dragFrom = -1;
+    redraw();
+    restoring = false;
+    undoState();
+  }
+  const homeOk = () => ({ K: cells[4] === 'K' && cells[7] === 'R', Q: cells[4] === 'K' && cells[0] === 'R', k: cells[60] === 'k' && cells[63] === 'r', q: cells[60] === 'k' && cells[56] === 'r' });
+  /** The squares where an en passant capture is possible right now (the square the pawn skipped over). */
+  function epOptions() {
+    const out = [];
+    for (let f = 0; f < 8; f++) {
+      const n = 'abcdefgh'[f];
+      if (turn === 'w' && cells[4 * 8 + f] === 'p' && !cells[5 * 8 + f] && !cells[6 * 8 + f] && (cells[4 * 8 + f - 1] === 'P' && f > 0 || cells[4 * 8 + f + 1] === 'P' && f < 7)) out.push(n + '6');
+      if (turn === 'b' && cells[3 * 8 + f] === 'P' && !cells[2 * 8 + f] && !cells[1 * 8 + f] && (cells[3 * 8 + f - 1] === 'p' && f > 0 || cells[3 * 8 + f + 1] === 'p' && f < 7)) out.push(n + '3');
+    }
+    return out;
+  }
+  /** Squares to mark in red: pawns on the first or last rank, extra kings, kings touching, and the king of the side NOT to move when it is attacked. */
+  function badSquares() {
+    const s = new Set();
+    cells.forEach((c, i) => { if ((c === 'P' || c === 'p') && (i < 8 || i >= 56)) s.add(i); });
+    ['K', 'k'].forEach((k) => { const at = []; cells.forEach((c, i) => { if (c === k) at.push(i); }); if (at.length > 1) at.forEach((i) => s.add(i)); });
+    const wk = cells.indexOf('K'), bk = cells.indexOf('k');
+    if (wk >= 0 && bk >= 0 && Math.abs((wk % 8) - (bk % 8)) <= 1 && Math.abs(Math.floor(wk / 8) - Math.floor(bk / 8)) <= 1) { s.add(wk); s.add(bk); }
+    try {
+      const g = new window.Chess();
+      if (!g.loadFen(toFen())) {
+        const opp = turn === 'w' ? BLACK : WHITE;
+        if (g.inCheck(opp)) { const ks = g.kingSquare(opp); if (ks >= 0) s.add((ks >> 4) * 8 + (ks & 7)); }
+      }
+    } catch (x) { /* ignore */ }
+    return s;
+  }
+  function countsHtml() {
+    const line = (up, name) => {
+      const ls = ORDER.map((t) => [t, cells.filter((c) => c === (up ? t.toUpperCase() : t)).length]);
+      const total = ls.reduce((a, x) => a + x[1], 0), pawns = ls.find((x) => x[0] === 'p')[1], kings = ls.find((x) => x[0] === 'k')[1];
+      const bad = total > 16 || pawns > 8 || kings !== 1;
+      return `<span class="ed-cn${bad ? ' bad' : ''}"><b>${name} ${total}</b> ${ls.filter((x) => x[1]).map((x) => `<span class="ed-g">${GLYPH[x[0]]}</span>${x[1]}`).join(' ')}</span>`;
+    };
+    return line(true, 'White') + line(false, 'Black');
+  }
+
   /* ------------------------------------------------------------------ drawing */
   function drawBoard() {
     const b = $('#ed-board');
     b.innerHTML = '';
+    const bad = badSquares();
     for (let i = 0; i < 64; i++) {
       const r = flipped ? Math.floor(i / 8) : 7 - Math.floor(i / 8), f = flipped ? 7 - (i % 8) : i % 8;
       const el = document.createElement('div');
-      el.className = 'square ' + ((f + r) % 2 === 1 ? 'light' : 'dark') + (moveSel === r * 8 + f ? ' ed-sel' : '');
+      el.className = 'square ' + ((f + r) % 2 === 1 ? 'light' : 'dark') + (moveSel === r * 8 + f ? ' ed-sel' : '') + (bad.has(r * 8 + f) ? ' ed-bad' : '');
       el.dataset.sq = r * 8 + f;
       const last = flipped ? 7 : 0;
       if (r === last) { const c = document.createElement('span'); c.className = 'coord file'; c.textContent = 'abcdefgh'[f]; el.appendChild(c); }
@@ -93,20 +168,36 @@
     const pal = $('#ed-pal');
     const btn = (letter, glyph, cls) => `<button class="ed-pc${brush === letter ? ' on' : ''}" data-l="${letter}" aria-label="${letter === 'x' ? 'Eraser' : (cls === 'w' ? 'White ' : 'Black ') + glyph}"><span class="piece ${cls}">${letter === 'x' ? '✕' : GLYPH[letter.toLowerCase()]}</span></button>`;
     pal.innerHTML = '<div class="ed-prow">' + ORDER.map((t) => btn(t.toUpperCase(), t, 'w')).join('') + '</div><div class="ed-prow">' + ORDER.map((t) => btn(t, t, 'b')).join('') + '</div><div class="ed-prow"><button class="ed-pc ed-erase' + (brush === 'm' ? ' on' : '') + '" data-l="m" aria-label="Move pieces">&#10021; Move</button><button class="ed-pc ed-erase' + (brush === 'x' ? ' on' : '') + '" data-l="x">Eraser</button></div>';
-    pal.querySelectorAll('.ed-pc').forEach((b) => { b.onclick = () => { brush = b.dataset.l; moveSel = -1; drawPalette(); drawBoard(); }; });
+    pal.querySelectorAll('.ed-pc').forEach((b) => {
+      b.onclick = () => { if (b._sup) { b._sup = false; return; } brush = b.dataset.l; moveSel = -1; drawPalette(); drawBoard(); };
+      if (/^[KQRBNPkqrbnp]$/.test(b.dataset.l)) b.addEventListener('pointerdown', (e) => palDrag(e, b));
+    });
     const bd = $('#ed-board'); if (bd) bd.classList.toggle('ed-move', brush === 'm');
   }
   function drawInfo() {
+    // castling is only possible with the king and rook on their home squares; an en passant square only where a capture exists
+    const ok = homeOk();
+    ['K', 'Q', 'k', 'q'].forEach((c) => { if (!ok[c]) castle[c] = false; });
+    const opts = epOptions();
+    if (ep && !opts.includes(ep)) ep = '';
     const pr = problems();
     const box = $('#ed-msg');
     box.className = 'ed-msg ' + (pr.length ? 'bad' : 'ok');
     box.innerHTML = pr.length ? pr.map((x) => '<div>' + esc(x) + '</div>').join('') : 'Looks good. This position can be played.';
-    $('#ed-play1').disabled = $('#ed-play2').disabled = pr.length > 0;
+    $('#ed-play0').disabled = $('#ed-play1').disabled = $('#ed-play2').disabled = $('#ed-an').disabled = pr.length > 0;
     $('#ed-white').classList.toggle('on', turn === 'w');
     $('#ed-black').classList.toggle('on', turn === 'b');
-    ['K', 'Q', 'k', 'q'].forEach((c) => { $('#ed-c' + c).checked = castle[c]; });
+    ['K', 'Q', 'k', 'q'].forEach((c) => { const x = $('#ed-c' + c); x.checked = castle[c]; x.disabled = !ok[c]; x.parentElement.classList.toggle('dim', !ok[c]); });
+    const sel = $('#ed-ep');
+    sel.innerHTML = '<option value="">None</option>' + opts.map((o) => `<option value="${o}">${o}</option>`).join('');
+    sel.value = ep; sel.disabled = !opts.length;
+    if (document.activeElement !== $('#ed-hm')) $('#ed-hm').value = hm;
+    if (document.activeElement !== $('#ed-fm')) $('#ed-fm').value = fm;
+    $('#ed-cnt').innerHTML = countsHtml();
     $('#ed-fen').value = toFen();
     if (creating) drawCreate(pr);
+    track();
+    updateEval(pr.length > 0);
   }
   function drawCreate(pr) {
     const ok = verified(), box = $('#ed-ver');
@@ -134,30 +225,190 @@
     redraw();
   }
 
+
+  /* ------------------------------------------------------------------ drag from the palette, press-and-hold, live eval */
+  function palDrag(e0, btn) {
+    if (e0.pointerType === 'mouse' && e0.button !== 0) return;
+    const letter = btn.dataset.l, x0 = e0.clientX, y0 = e0.clientY;
+    let ghost = null;
+    const mv = (e) => {
+      if (!ghost) {
+        if (Math.hypot(e.clientX - x0, e.clientY - y0) < 8) return;
+        const src = btn.querySelector('.piece');
+        ghost = document.createElement('span');
+        ghost.className = 'piece ' + (src ? src.className.replace('piece ', '') : '') + ' ed-ghost';
+        ghost.textContent = src ? src.textContent : '';
+        document.body.appendChild(ghost);
+      }
+      e.preventDefault();
+      ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px';
+    };
+    const up = (e) => {
+      document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up); document.removeEventListener('pointercancel', up);
+      if (!ghost) return;
+      ghost.remove();
+      btn._sup = true; setTimeout(() => { btn._sup = false; }, 80);
+      const sq = e.type === 'pointerup' ? document.elementFromPoint(e.clientX, e.clientY) : null;
+      const q = sq && sq.closest ? sq.closest('#ed-board .square') : null;
+      if (q) { cells[+q.dataset.sq] = letter; redraw(); }
+    };
+    document.addEventListener('pointermove', mv, { passive: false }); document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
+  }
+  /** Drag hooks for pieces already on the board: drop on a square to move it, drop off the board to delete it. */
+  const dTap = (i) => {
+    if (brush === 'm') { put(i); return; }
+    if (dragFrom < 0) { if (cells[i]) dragFrom = i; return; }
+    if (i !== dragFrom) { cells[i] = cells[dragFrom]; cells[dragFrom] = ''; }
+    dragFrom = -1; redraw();
+  };
+  const dOff = (i) => {
+    if (brush === 'm') { put(i); return; }
+    if (dragFrom >= 0) { cells[dragFrom] = ''; dragFrom = -1; redraw(); toast('Piece removed'); }
+  };
+  /** Press and hold a square: clear it, or fill / clear its whole rank or file. */
+  function sqSheet(i) {
+    const f = i % 8, r = Math.floor(i / 8), nm = 'abcdefgh'[f] + (r + 1);
+    const piece = /^[KQRBNPkqrbnp]$/.test(brush);
+    const fillLabel = piece ? `<span class="piece ${brush === brush.toUpperCase() ? 'w' : 'b'}">${GLYPH[brush.toLowerCase()]}</span>` : '';
+    LP.openSheet(`<h2>Square ${nm}</h2><div class="stack">
+      <button class="btn" id="sq-clr">Clear this square</button>
+      ${piece ? `<button class="btn" id="sq-fr">Fill rank ${r + 1} with ${fillLabel}</button><button class="btn" id="sq-ff">Fill file ${'abcdefgh'[f]} with ${fillLabel}</button>` : ''}
+      <button class="btn" id="sq-cr">Clear rank ${r + 1}</button><button class="btn" id="sq-cf">Clear file ${'abcdefgh'[f]}</button>
+      <button class="btn" id="sq-x">Cancel</button></div>`, true);
+    const go = (fn) => () => { fn(); LP.closeSheet(); redraw(); };
+    $('#sq-clr').onclick = go(() => { cells[i] = ''; });
+    if (piece) {
+      $('#sq-fr').onclick = go(() => { for (let k = 0; k < 8; k++) cells[r * 8 + k] = brush; });
+      $('#sq-ff').onclick = go(() => { for (let k = 0; k < 8; k++) cells[k * 8 + f] = brush; });
+    }
+    $('#sq-cr').onclick = go(() => { for (let k = 0; k < 8; k++) cells[r * 8 + k] = ''; });
+    $('#sq-cf').onclick = go(() => { for (let k = 0; k < 8; k++) cells[k * 8 + f] = ''; });
+    $('#sq-x').onclick = LP.closeSheet;
+  }
+
+  /** Mirror left-right, or swap the colours (the position seen from the other side). */
+  function mirror() {
+    const n = new Array(64).fill('');
+    for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) n[r * 8 + (7 - f)] = cells[r * 8 + f];
+    cells = n; ep = ep ? 'abcdefgh'[7 - 'abcdefgh'.indexOf(ep[0])] + ep[1] : '';
+    castle = { K: false, Q: false, k: false, q: false }; curId = null; redraw();
+  }
+  function swapColours() {
+    const n = new Array(64).fill('');
+    const sw = (c) => (!c ? '' : c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase());
+    for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) n[r * 8 + f] = sw(cells[(7 - r) * 8 + f]);
+    cells = n; turn = turn === 'w' ? 'b' : 'w';
+    castle = { K: castle.k, Q: castle.q, k: castle.K, q: castle.Q };
+    ep = ep ? ep[0] + (ep[1] === '3' ? '6' : '3') : ''; curId = null; redraw();
+  }
+  const PRESETS = [
+    ['Start position', START],
+    ['Just two kings', '4k3/8/8/8/8/8/8/4K3 w - - 0 1'],
+    ['King and queen vs king', '4k3/8/8/8/8/8/8/3QK3 w - - 0 1'],
+    ['King and rook vs king', '4k3/8/8/8/8/8/8/R3K3 w - - 0 1'],
+    ['Two rooks vs king', '4k3/8/8/8/8/8/8/R2K3R w - - 0 1'],
+    ['Two bishops vs king', '4k3/8/8/8/8/8/8/2B1KB2 w - - 0 1'],
+    ['Bishop and knight vs king', '4k3/8/8/8/8/8/8/2B1K1N1 w - - 0 1'],
+    ['King and pawn: opposition', '8/8/8/4k3/8/4K3/4P3/8 w - - 0 1'],
+    ['Lucena position', '1K1k4/1P6/8/8/8/8/r7/2R5 w - - 0 1'],
+    ['Philidor position', '4k3/8/r7/3PK3/8/8/R7/8 b - - 0 1'],
+    ['Back-rank mate in 1', '6k1/5ppp/8/8/8/8/8/R3K3 w - - 0 1'],
+  ];
+  function presetSheet() {
+    LP.openSheet('<h2>Quick starts<span class="sub">Pick a position to start from.</span></h2><div class="ed-saved">' + PRESETS.map((p, k) => `<div class="ed-sv"><button class="ed-sv-go" data-k="${k}"><b>${esc(p[0])}</b></button></div>`).join('') + '</div><button class="btn wide" id="ed-lx">Close</button>', true);
+    $('#ed-lx').onclick = LP.closeSheet;
+    document.querySelectorAll('.ed-sv-go').forEach((b) => { b.onclick = () => { if (!fromFen(PRESETS[+b.dataset.k][1])) { curId = null; LP.closeSheet(); redraw(); } }; });
+  }
+
+  /* ---- live evaluation bar beside the board, and the full analysis */
+  let evBar = null, evKey = '', evT = 0;
+  function updateEval(bad) {
+    const wrap = document.querySelector('#editor .board-wrap');
+    if (!wrap || !LP.evalBar || !MR || !window.AIAnalyse) return;
+    if (!evBar) evBar = LP.evalBar.attach(wrap);
+    if (!evBar) return;
+    if (bad) { evBar.hide(); evKey = ''; return; }
+    const fen = toFen(), key = fen + '|' + flipped;
+    if (key === evKey) return;
+    evKey = key; clearTimeout(evT);
+    evT = setTimeout(() => {
+      if (evKey !== key || !$('#editor').classList.contains('active')) return;
+      let w = 0.5, mate = 0, fin = false;
+      try {
+        const g = new window.Chess();
+        if (g.loadFen(fen)) return;
+        if (!g.hasLegalMove()) { if (g.inCheck(g.turn)) { w = g.turn === WHITE ? 0 : 1; fin = true; } }
+        else {
+          const A = window.AIAnalyse.run(MR.clone(g), null, 300, 9, 4), s = A.top[0].score, p = MR.wp(s);
+          w = g.turn === WHITE ? p : 1 - p;
+          if (Math.abs(s) >= MR.MATE - 100) mate = Math.ceil((MR.MATE - Math.abs(s)) / 2) * ((s > 0) === (g.turn === WHITE) ? 1 : -1);
+        }
+      } catch (x) { w = 0.5; }
+      if (evKey === key) evBar.set(w, flipped, mate, fin);
+    }, 450);
+  }
+  /** The best moves with a score, and the shortest forced mate if there is one. */
+  function analyseSheet() {
+    if (problems().length) return;
+    LP.openSheet('<h2>Analysing…</h2><p class="note">Looking for the best moves.</p>');
+    setTimeout(() => {
+      let html = '';
+      try {
+        const g = new window.Chess(); g.loadFen(toFen());
+        const side = g.turn === WHITE ? 'White' : 'Black';
+        if (!g.hasLegalMove()) html = g.inCheck(g.turn) ? `<p class="note"><b>Checkmate.</b> ${side} has no moves and is in check.</p>` : '<p class="note"><b>Stalemate.</b> ' + side + ' has no moves, so it is a draw.</p>';
+        else {
+          const A = window.AIAnalyse.run(MR.clone(g), null, 1800, 12, 6);
+          const fmtS = (s) => { if (Math.abs(s) >= MR.MATE - 100) { const n = Math.ceil((MR.MATE - Math.abs(s)) / 2); return (s > 0 ? side : (g.turn === WHITE ? 'Black' : 'White')) + ' mates in ' + n; } const wv = MR.wp(s), ww = g.turn === WHITE ? wv : 1 - wv; return LP.evalBar.label(ww, false) + ' for White'; };
+          const rows = A.top.slice(0, 3).map((t, k) => `<div class="ed-an-r${k ? '' : ' best'}"><b>${esc(g.moveToSan(t.move))}</b><span>${esc(fmtS(t.score))}</span></div>`).join('');
+          let mate = '';
+          try { const m = window.findMateLine ? window.findMateLine(g, 6, 1200) : null; mate = m ? `<p class="ed-an-m"><b>Forced mate in ${m.n}</b> for ${side}, starting with <b>${esc(g.moveToSan(m.move))}</b>.</p>` : '<p class="note">No forced mate found within 6 moves.</p>'; } catch (x) { mate = ''; }
+          html = `<p class="note">${side} to move. Best moves:</p><div class="ed-an">${rows}</div>${mate}`;
+        }
+      } catch (x) { html = '<p class="note">Could not analyse this position.</p>'; }
+      LP.openSheet('<h2>Position analysis</h2>' + html + '<button class="btn wide" id="ed-anx">Close</button>', true);
+      $('#ed-anx').onclick = LP.closeSheet;
+    }, 60);
+  }
+
   /* ------------------------------------------------------------------ saved positions */
   function stamp(t) { const d = new Date(t); return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); }
+  const folders = () => [...new Set(readSaved().map((p) => p.folder).filter(Boolean))];
   function saveSheet() {
-    LP.openSheet('<h2>Save this position<span class="sub">Give it a name so you can find it again.</span></h2><input id="ed-name" class="text-in" maxlength="30" placeholder="My position" autocomplete="off"><div class="row"><button class="btn" id="ed-sx">Cancel</button><button class="btn primary" id="ed-sok">Save</button></div>', true);
+    const cur = curId && readSaved().find((x) => x.id === curId);
+    LP.openSheet(`<h2>Save this position<span class="sub">Give it a name so you can find it again.</span></h2>
+      <input id="ed-name" class="text-in" maxlength="30" placeholder="My position" autocomplete="off" value="${cur ? esc(cur.name) : ''}">
+      <input id="ed-folder" class="text-in" maxlength="20" placeholder="Folder (optional)" autocomplete="off" list="ed-folders" value="${cur ? esc(cur.folder || '') : ''}" style="margin-top:.5rem">
+      <datalist id="ed-folders">${folders().map((f) => `<option value="${esc(f)}">`).join('')}</datalist>
+      <div class="row"><button class="btn" id="ed-sx">Cancel</button>${cur ? '<button class="btn" id="ed-snew">Save as new</button><button class="btn primary" id="ed-sok">Update</button>' : '<button class="btn primary" id="ed-sok">Save</button>'}</div>`, true);
     const nm = $('#ed-name');
     nm.focus();
-    const ok = () => {
-      const l = readSaved();
-      l.unshift({ id: Date.now().toString(36), name: nm.value.trim() || 'Position ' + (l.length + 1), fen: toFen(), date: Date.now() });
+    const go = (asNew) => {
+      const l = readSaved(), name = nm.value.trim(), fo = $('#ed-folder').value.trim();
+      let id = curId;
+      if (!asNew && cur) { const x = l.find((q) => q.id === curId); if (x) { x.name = name || x.name; x.folder = fo; x.fen = toFen(); x.date = Date.now(); } }
+      else { id = Date.now().toString(36); l.unshift({ id, name: name || 'Position ' + (l.length + 1), fen: toFen(), date: Date.now(), folder: fo }); }
       LP.closeSheet();
-      toast(writeSaved(l) ? 'Position saved' : 'Could not save on this device');
+      if (writeSaved(l)) { curId = id; toast(!asNew && cur ? 'Position updated' : 'Position saved'); } else toast('Could not save on this device');
     };
-    $('#ed-sok').onclick = ok;
+    $('#ed-sok').onclick = () => go(false);
+    if (cur) $('#ed-snew').onclick = () => go(true);
     $('#ed-sx').onclick = LP.closeSheet;
-    nm.addEventListener('keydown', (e) => { if (e.key === 'Enter') ok(); });
+    nm.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') go(false); });
   }
+  let folderSel = '';
   function loadSheet() {
-    const l = readSaved();
-    LP.openSheet('<h2>Saved positions</h2>' + (l.length ? '<div class="ed-saved">' + l.map((p) => `<div class="ed-sv" data-id="${p.id}"><button class="ed-sv-go"><b>${esc(p.name)}</b><small>${stamp(p.date)}</small></button><button class="ed-sv-del" aria-label="Delete ${esc(p.name)}">✕</button></div>`).join('') + '</div>' : '<p class="note">Nothing saved yet. Set up a position and press Save.</p>') + '<button class="btn wide" id="ed-lx">Close</button>', true);
+    const all = readSaved(), fl = folders();
+    if (folderSel && !fl.includes(folderSel)) folderSel = '';
+    const l = folderSel ? all.filter((p) => p.folder === folderSel) : all;
+    const chips = fl.length ? '<div class="ed-chips"><button class="ed-chip' + (folderSel ? '' : ' on') + '" data-f="">All</button>' + fl.map((f) => `<button class="ed-chip${folderSel === f ? ' on' : ''}" data-f="${esc(f)}">${esc(f)}</button>`).join('') + '</div>' : '';
+    LP.openSheet('<h2>Saved positions</h2>' + chips + (l.length ? '<div class="ed-saved">' + l.map((p) => `<div class="ed-sv" data-id="${p.id}"><button class="ed-sv-go"><b>${esc(p.name)}</b><small>${p.folder ? esc(p.folder) + ' · ' : ''}${stamp(p.date)}</small></button><button class="ed-sv-del" aria-label="Delete ${esc(p.name)}">✕</button></div>`).join('') + '</div>' : '<p class="note">Nothing saved yet. Set up a position and press Save.</p>') + '<button class="btn wide" id="ed-lx">Close</button>', true);
     $('#ed-lx').onclick = LP.closeSheet;
+    document.querySelectorAll('.ed-chip').forEach((c) => { c.onclick = () => { folderSel = c.dataset.f; loadSheet(); }; });
     document.querySelectorAll('.ed-sv').forEach((row) => {
       const id = row.dataset.id;
-      row.querySelector('.ed-sv-go').onclick = () => { const p = readSaved().find((x) => x.id === id); if (p && !fromFen(p.fen)) { LP.closeSheet(); redraw(); } };
-      row.querySelector('.ed-sv-del').onclick = () => { writeSaved(readSaved().filter((x) => x.id !== id)); loadSheet(); };
+      row.querySelector('.ed-sv-go').onclick = () => { const p = readSaved().find((x) => x.id === id); if (p && !fromFen(p.fen)) { curId = id; curName = p.name; LP.closeSheet(); redraw(); toast('Loaded ' + p.name); } };
+      row.querySelector('.ed-sv-del').onclick = () => { writeSaved(readSaved().filter((x) => x.id !== id)); if (curId === id) curId = null; loadSheet(); };
     });
   }
   function pasteSheet() {
@@ -172,18 +423,32 @@
       if (txt && txt.split(' ').length === 1) txt += ' w - - 0 1';   // just the board
       const err = fromFen(txt);
       if (err) { $('#ed-perr').textContent = err; return; }
-      LP.closeSheet(); redraw();
+      curId = null; LP.closeSheet(); redraw();
     };
   }
   /** Import and Export both start by asking which format: FEN or PGN. */
-  function askFormat(verb, onFen, onPgn) {
+  function askFormat(verb, onFen, onPgn, onLink) {
     LP.openSheet(`<h2>${verb}<span class="sub">${verb === 'Import' ? 'What are you importing?' : 'What do you want to export?'}</span></h2>
       <div class="stack"><button class="btn big" id="ed-fmt-fen">FEN<small>One position as a line of text</small></button>
       <button class="btn big" id="ed-fmt-pgn">PGN<small>${verb === 'Import' ? 'A whole game: the editor shows its final position' : 'The position as a PGN file'}</small></button>
+      ${onLink ? '<button class="btn big" id="ed-fmt-link">Link<small>A web link that opens this position in the editor</small></button>' : ''}
       <button class="btn" id="ed-fmt-x">Cancel</button></div>`, true);
     $('#ed-fmt-fen').onclick = onFen;
     $('#ed-fmt-pgn').onclick = onPgn;
+    if (onLink) $('#ed-fmt-link').onclick = onLink;
     $('#ed-fmt-x').onclick = LP.closeSheet;
+  }
+  const shareUrl = () => location.origin + location.pathname + '?fen=' + encodeURIComponent(toFen());
+  function linkSheet() {
+    const url = shareUrl();
+    LP.openSheet('<h2>Share link<span class="sub">Anyone who opens it lands on this position in the editor.</span></h2><textarea id="ex-text" class="ex-text" readonly rows="4" spellcheck="false"></textarea><div class="row"><button class="btn primary" id="ed-lkc">Copy link</button><button class="btn" id="ed-lkx">Close</button></div>', true);
+    const ta = $('#ex-text'); ta.value = url;
+    $('#ed-lkx').onclick = LP.closeSheet;
+    $('#ed-lkc').onclick = async () => {
+      let ok = false;
+      try { await navigator.clipboard.writeText(url); ok = true; } catch (x) { try { ta.removeAttribute('readonly'); ta.focus(); ta.select(); ok = document.execCommand('copy'); ta.setAttribute('readonly', ''); } catch (y) { ok = false; } }
+      $('#ed-lkc').textContent = ok ? 'Copied!' : 'Press and hold the text to copy';
+    };
   }
 
   /* ---- PGN import: play the moves through and show the final position */
@@ -221,7 +486,7 @@
       if (r.err) { $('#ed-perr').textContent = r.err; return; }
       const err = fromFen(r.fen);
       if (err) { $('#ed-perr').textContent = err; return; }
-      LP.closeSheet(); redraw();
+      curId = null; LP.closeSheet(); redraw();
       toast(r.n ? 'Loaded ' + r.n + ' move' + (r.n === 1 ? '' : 's') : 'Position loaded');
     };
   }
@@ -285,14 +550,20 @@
         </div>
         <div id="ed-msg" class="ed-msg"></div>
         <div class="ed-row"><span class="ed-l">To move</span><button class="btn seg" id="ed-white">White</button><button class="btn seg" id="ed-black">Black</button></div>
+        <div id="ed-cnt" class="ed-cnt"></div>
         <div class="ed-row ed-cast"><span class="ed-l">Castling</span>
           <label><input type="checkbox" id="ed-cK"> White short</label><label><input type="checkbox" id="ed-cQ"> White long</label>
           <label><input type="checkbox" id="ed-ck"> Black short</label><label><input type="checkbox" id="ed-cq"> Black long</label></div>
-        <div class="controls ed-tools"><button class="btn" id="ed-clear">Clear</button><button class="btn" id="ed-start">Start position</button><button class="btn" id="ed-flip">Flip</button></div>
+        <div class="ed-row"><span class="ed-l">En passant</span><select id="ed-ep" class="text-in ed-num" aria-label="En passant square"></select>
+          <span class="ed-l ed-l2">Half-moves</span><input id="ed-hm" class="text-in ed-num" type="number" min="0" max="99" inputmode="numeric" aria-label="Half-move clock">
+          <span class="ed-l ed-l2">Move no.</span><input id="ed-fm" class="text-in ed-num" type="number" min="1" max="999" inputmode="numeric" aria-label="Move number"></div>
+        <div class="controls ed-tools"><button class="btn" id="ed-undo">Undo</button><button class="btn" id="ed-redo">Redo</button><button class="btn" id="ed-clear">Clear</button><button class="btn" id="ed-presets">Quick starts</button></div>
+        <div class="controls ed-tools"><button class="btn" id="ed-flip">Flip board</button><button class="btn" id="ed-mirror">Mirror</button><button class="btn" id="ed-swap">Swap colours</button><button class="btn" id="ed-an">Analyse</button></div>
         <div class="ed-row"><input id="ed-fen" class="text-in ed-fen" readonly aria-label="FEN code"></div>
         <div class="controls ed-tools"><button class="btn" id="ed-import">Import</button><button class="btn" id="ed-export">Export</button><button class="btn" id="ed-save">Save</button><button class="btn" id="ed-load">Saved</button></div>
-        <div class="controls ed-go ed-playrow"><button class="btn primary" id="ed-play1">Play the computer</button><button class="btn primary" id="ed-play2">Play 2 players</button></div>
-        <p class="note ed-fun">Position games are for fun: they never change your Elo, leaderboard or rewards. You play White against the computer.</p>
+        <div class="controls ed-go ed-playrow"><button class="btn primary ed-wide" id="ed-play0">Open in Sandbox</button></div>
+        <div class="controls ed-go ed-playrow"><button class="btn" id="ed-play1">Play the computer</button><button class="btn" id="ed-play2">Play 2 players</button></div>
+        <p class="note ed-fun">The Sandbox lets you undo, get hints and see the eval bar. Position games are for fun: they never change your Elo, leaderboard or rewards. Press and hold a square for more tools, or drag pieces to move them (drop one off the board to delete it).</p>
       </div></div>`;
     $('#app').insertBefore(sec, $('#sheet-bg'));
     $('#ed-back').onclick = () => { if (creating && LP.community) LP.community.open(); else LP.showPage('menu'); };
@@ -300,17 +571,37 @@
     $('#ed-cat').onchange = (e) => { cat = e.target.value; drawInfo(); };
     $('#ed-test').onclick = testIt;
     $('#ed-pub').onclick = publish;
-    if (LP.drag && LP.drag.attach) LP.drag.attach($('#ed-board'), { tap: (i) => put(i), selected: () => moveSel, can: (i) => brush === 'm' && !!cells[i] });
+    if (LP.drag && LP.drag.attach) LP.drag.attach($('#ed-board'), { tap: dTap, selected: () => (brush === 'm' ? moveSel : dragFrom), can: (i) => !!cells[i], off: dOff, done: () => { dragFrom = -1; } });
+    const bd = $('#ed-board');
+    bd.addEventListener('pointerdown', (ev) => {
+      const q = ev.target.closest && ev.target.closest('.square');
+      if (!q || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
+      clearTimeout(lpT); lpPos = { x: ev.clientX, y: ev.clientY };
+      lpT = setTimeout(() => { lpFired = true; sqSheet(+q.dataset.sq); }, 600);
+    });
+    bd.addEventListener('pointermove', (ev) => { if (lpPos && Math.hypot(ev.clientX - lpPos.x, ev.clientY - lpPos.y) > 8) clearTimeout(lpT); });
+    ['pointerup', 'pointercancel'].forEach((t) => bd.addEventListener(t, () => clearTimeout(lpT)));
+    bd.addEventListener('contextmenu', (ev) => ev.preventDefault());
+    bd.addEventListener('click', (ev) => { if (lpFired) { lpFired = false; ev.stopImmediatePropagation(); ev.preventDefault(); } }, true);
+    $('#ed-ep').onchange = (ev) => { ep = ev.target.value; drawInfo(); };
+    $('#ed-hm').oninput = (ev) => { hm = Math.max(0, Math.min(99, parseInt(ev.target.value, 10) || 0)); drawInfo(); };
+    $('#ed-fm').oninput = (ev) => { fm = Math.max(1, Math.min(999, parseInt(ev.target.value, 10) || 1)); drawInfo(); };
+    $('#ed-undo').onclick = () => goHist(-1);
+    $('#ed-redo').onclick = () => goHist(1);
+    $('#ed-mirror').onclick = mirror;
+    $('#ed-swap').onclick = swapColours;
+    $('#ed-presets').onclick = presetSheet;
+    $('#ed-an').onclick = analyseSheet;
     $('#ed-white').onclick = () => { turn = 'w'; drawInfo(); };
     $('#ed-black').onclick = () => { turn = 'b'; drawInfo(); };
     ['K', 'Q', 'k', 'q'].forEach((c) => { $('#ed-c' + c).onchange = (e) => { castle[c] = e.target.checked; drawInfo(); }; });
-    $('#ed-clear').onclick = () => { cells = new Array(64).fill(''); castle = { K: false, Q: false, k: false, q: false }; redraw(); };
-    $('#ed-start').onclick = () => { fromFen(START); redraw(); };
-    $('#ed-flip').onclick = () => { flipped = !flipped; drawBoard(); };
+    $('#ed-clear').onclick = () => { cells = new Array(64).fill(''); castle = { K: false, Q: false, k: false, q: false }; ep = ''; hm = 0; fm = 1; curId = null; redraw(); };
+    $('#ed-flip').onclick = () => { flipped = !flipped; drawBoard(); updateEval(false); };
     $('#ed-import').onclick = () => askFormat('Import', pasteSheet, pgnImportSheet);
-    $('#ed-export').onclick = () => askFormat('Export', exportFenSheet, exportPgnSheet);
+    $('#ed-export').onclick = () => askFormat('Export', exportFenSheet, exportPgnSheet, linkSheet);
     $('#ed-save').onclick = saveSheet;
     $('#ed-load').onclick = loadSheet;
+    $('#ed-play0').onclick = () => { if (!problems().length) LP.playPosition(toFen(), 0); };
     $('#ed-play1').onclick = () => { if (!problems().length) LP.playPosition(toFen(), 1); };
     $('#ed-play2').onclick = () => { if (!problems().length) LP.playPosition(toFen(), 2); };
     built = true;
@@ -360,12 +651,17 @@
       sel.value = cat; $('#ed-title').value = title;
     }
     $('#ed-cr').classList.toggle('hidden', !creating);
-    document.querySelectorAll('.ed-playrow, .ed-fun').forEach((e) => e.classList.toggle('hidden', creating));
+    document.querySelectorAll('.ed-playrow, .ed-fun, #ed-an').forEach((e) => e.classList.toggle('hidden', creating));
     $('#ed-ttl').textContent = creating ? 'Create a puzzle' : 'Position editor';
     drawPalette();
     redraw();
     LP.showPage('editor');
   }
+  // a shared link (?fen=...) opens the editor on that position
+  try {
+    const q = new URLSearchParams(location.search).get('fen');
+    if (q) setTimeout(() => { show(); if (!fromFen(q)) { curId = null; redraw(); } try { history.replaceState(null, '', location.pathname); } catch (x) { /* ignore */ } }, 700);
+  } catch (x) { /* ignore */ }
   const m = document.querySelector('.mode[data-mode="editor"]');
   if (m) m.addEventListener('click', show);
   LP.editor = { show, tested, toFen, fromFen: (f) => { const e = fromFen(f); if (built && !e) redraw(); return e; } };

@@ -26,8 +26,8 @@
   const same = (a, b) => a.from === b.from && a.to === b.to && (a.promo || 0) === (b.promo || 0) && (a.q || 0) === (b.q || 0);
   const wpLoss = (bs, ps) => Math.max(0, MR.wp(bs) - Math.min(MR.wp(ps), MR.wp(bs)));
 
-  const TEACH = { inaccuracy: 1, mistake: 1, blunder: 1, missedwin: 1 };
-  const VERIFY = { inaccuracy: 1, mistake: 1, blunder: 1, missedwin: 1, brilliant: 1, great: 1, interesting: 1 };
+  const TEACH = { inaccuracy: 1, mistake: 1, blunder: 1, missedwin: 1, missedmate: 1, throw: 1 };
+  const VERIFY = { inaccuracy: 1, mistake: 1, blunder: 1, missedwin: 1, missedmate: 1, throw: 1, brilliant: 1, great: 1, onlymove: 1, interesting: 1 };
 
   function startPosition(job) {
     const g = new Chess();

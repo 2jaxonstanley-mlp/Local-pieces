@@ -427,6 +427,8 @@
       case 'brilliant': out.t = sac ? `Brilliant! ${body}. It gives up material on purpose and is still the best move, which is very hard to spot.` : `Brilliant! ${body}. It is a standout move that most players would miss.`; break;
       case 'great': out.t = `Great move! ${body}. It was the one move that kept ${vc.poss} advantage.`; break;
       case 'best': out.t = `${body}. That was the best move in this position.`; break;
+      case 'onlymove': out.t = `The only move! ${body}. Every other move would have thrown away a big part of ${vc.poss} position.`; break;
+      case 'excellent': out.t = `Excellent! ${body}. It is almost as strong as the very best move.`; break;
       case 'good': out.t = `A good move. ${body}, which keeps things safe and solid.`; break;
       case 'interesting': out.t = `Interesting! ${body}. It takes a risk and it holds up.`; break;
       case 'novelty': out.t = `A novelty: ${body}. It leaves known opening theory and is still a sound move.`; break;

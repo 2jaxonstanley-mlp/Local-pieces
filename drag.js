@@ -70,9 +70,10 @@
       if (!started) return;
       suppress = true;
       setTimeout(() => { suppress = false; }, 60);
-      if (!drop) return;
+      if (!drop) { if (hooks.done) hooks.done(); return; }
       if (under && +under.dataset.sq !== was.from) hooks.tap(+under.dataset.sq);
-      else if (!under) hooks.tap(was.from);   // let go off the board: put it back (deselect)
+      else if (!under) { if (hooks.off) hooks.off(was.from); else hooks.tap(was.from); }   // let go off the board: put it back (deselect), or whatever the board does with it
+      if (hooks.done) hooks.done();
     };
     board.addEventListener('pointerup', (e) => finish(e, true));
     board.addEventListener('pointercancel', (e) => finish(e, false));

@@ -2826,14 +2826,14 @@
 
   renderSavedList();
   buildBoard();
-  /** Start a game from a custom position (the editor): players = 1 (against the computer) or 2. */
+  /** Start a game from a custom position (the editor): players = 0 (Sandbox), 1 (against the computer) or 2. */
   function playPosition(fen, players) {
     const probe = new Chess();
     if (probe.loadFen(fen)) return;
     startFen = fen;
     pz = null;
     pendingTc = null;
-    guardSlots(() => { if (players === 2) { startGame('basic', false, null); } else askDifficulty('basic'); });
+    guardSlots(() => { if (players === 0) askDifficulty('tas'); else if (players === 2) { startGame('basic', false, null); } else askDifficulty('basic'); });   // 0 = the Sandbox (the editor's main button)
   }
   /** A Popular puzzle: you are forced to the side to move, the computer is always Insane. */
   function playPopular(p) {
