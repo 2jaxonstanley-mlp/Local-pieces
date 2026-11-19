@@ -2173,3 +2173,16 @@ body[data-bgk="stars"]::after { background-image: radial-gradient(1px 1px at 8% 
 .rv-alt:hover { background: var(--panel-2); border-color: var(--teal); }
 .rv-g-plot, .rv-pt { background: var(--panel); border: 1px solid var(--line); }
 .rv-board-wrap { border-radius: 10px; }
+
+/* eval bar: wider, rounded, centre line and quarter ticks, smooth fill, clearer labels, gold for mate */
+.evbar { width: 14px; border-radius: 8px 0 0 8px; background: linear-gradient(90deg, #1b1b1b, #2c2c2c); box-shadow: 0 0 0 1px rgba(0,0,0,.5), 2px 0 8px rgba(0,0,0,.35); opacity: 1; }
+.evbar .ev-fill { background: linear-gradient(90deg, #ffffff, #dcdcdc); transition: height .55s cubic-bezier(.22,.8,.3,1); }
+.evbar::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  background:
+    linear-gradient(to bottom, transparent calc(50% - 1px), rgba(231,76,60,.95) calc(50% - 1px), rgba(231,76,60,.95) calc(50% + 1px), transparent calc(50% + 1px)),
+    repeating-linear-gradient(to bottom, transparent 0, transparent calc(25% - 1px), rgba(128,128,128,.55) calc(25% - 1px), rgba(128,128,128,.55) 25%); }
+.evbar .ev-lab { z-index: 2; font-size: 9px; padding: 4px 0; text-shadow: none; }
+.evbar .ev-lab.mate { font-size: 10px; font-weight: 900; }
+.evbar.is-mate { box-shadow: 0 0 0 1px #e5b93c, 0 0 10px rgba(229,185,60,.55); }
+.evbar.is-mate .ev-lab { color: #e5b93c; }
+.evbar.is-mate .ev-lab.on-white { color: #8a5d00; }
