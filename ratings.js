@@ -380,12 +380,19 @@
     return bestC ? (legal.find((x) => same(x, bestC.move)) || pick) : pick;
   }
 
-  /* Optional artwork: drop icon-<id>.png into the game folder and they replace the text symbols automatically. */
+  /* Optional artwork: drop icon-<id>.png into the game folder and they replace the text symbols automatically.
+     Whether each file exists is remembered (localStorage), so the very first move of a session already knows and never flashes the text symbol. */
+  const ICK = 'localPieces.iconOk';
+  let iconOk = {};
+  try { iconOk = JSON.parse(localStorage.getItem(ICK) || '{}') || {}; } catch (e) { iconOk = {}; }
+  const saveOk = () => { try { localStorage.setItem(ICK, JSON.stringify(iconOk)); } catch (e) { /* ignore */ } };
   for (const x of Object.values(RATINGS)) {
     x.img = 'icon-' + x.id + '.png';
+    x.hasImg = !!iconOk[x.id];
     if (typeof Image !== 'undefined') {          // (not in the analysis worker)
       const im = new Image();
-      im.onload = () => { x.hasImg = true; };
+      im.onload = () => { x.hasImg = true; if (!iconOk[x.id]) { iconOk[x.id] = 1; saveOk(); } };
+      im.onerror = () => { x.hasImg = false; if (iconOk[x.id]) { delete iconOk[x.id]; saveOk(); } };
       im.src = x.img;
     }
   }
