@@ -2351,3 +2351,13 @@ details.log-old > summary::after { content: '\25BE'; margin-left: auto; opacity:
 .rv-g-tip.hidden { display: none; }
 .rv-g-plot { overflow: visible; }
 @media (prefers-reduced-motion: reduce) { .rv-g-cur { transition: none; } }
+
+/* ---- one-time Stockfish choice */
+#eng-ask .eng-opt { display: flex; flex-direction: column; gap: .15rem; width: 100%; text-align: left; margin-top: .55rem; padding: .75rem .9rem; border-radius: 12px; border: 1.5px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); color: inherit; font: inherit; cursor: pointer; }
+#eng-ask .eng-opt b { font-size: 1.02rem; }
+#eng-ask .eng-opt small { opacity: .75; font-size: .85rem; }
+#eng-ask .eng-opt.big { border-color: #5fd8f0; background: rgba(95,216,240,.12); }
+#eng-ask .eng-opt:focus-visible { outline: 2px solid #5fd8f0; outline-offset: 2px; }
+#eng-ask .note { margin: .7rem 0 .2rem; opacity: .7; font-size: .85rem; }
+#eng-ask .eng-load { width: 40%; animation: engSlide 1.1s ease-in-out infinite alternate; }
+@keyframes engSlide { from { margin-left: 0; } to { margin-left: 60%; } }

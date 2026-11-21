@@ -1,7 +1,9 @@
 /**
- * Stockfish in the browser (Web Workers). It needs stockfish.js + stockfish.wasm in the same folder as this file:
- *   LP.Stockfish      stockfish.js       + stockfish.wasm        (small, quick to load)
- *   LP.stockfishFor(level) gives the engine for a bot id (every Stockfish bot uses this one).
+ * Stockfish in the browser (Web Workers). Two engines, each needs its .js + .wasm in the same folder as this file:
+ *   LP.Stockfish      "Lite"   stockfish.js       + stockfish.wasm        (small, quick to load)
+ *   LP.StockfishFull  "Full"   stockfish-full.js  + stockfish-full.wasm   (the big network, about 99 MB, downloaded once then cached by the browser)
+ *                                        or the same file cut into pieces: sf-full-1.bin, sf-full-2.bin, ... (for hosts with an upload size limit)
+ *   LP.stockfishFor(level) gives the right one for a bot id ('stockfish' = Lite, 'stockfishfull' = Full).
  * If the files are missing or the page is opened straight from a folder, available() stays false and the game falls back to its own engine.
  *
  *   LP.Stockfish.load()                         -> Promise<boolean>   starts the engine (once)
@@ -62,26 +64,44 @@
         state = 'loading';
         let step = 0;
         const timer = setTimeout(() => { if (state === 'loading') { fail('load timeout'); resolve(false); } }, cfg.timeout);
-        const begin = () => {
+        const begin = (wasmUrl) => {
           try {
-            w = new Worker(cfg.url);
+            w = new Worker(cfg.url + (wasmUrl ? '#' + encodeURIComponent(wasmUrl) : ''));   // the engine reads the .wasm address from the part after the #
             w.onerror = (ev) => { clearTimeout(timer); if (state === 'loading') resolve(false); fail('worker error ' + (ev && ev.message)); };
             w.onmessage = (ev) => {
               const line = String(ev.data);
               if (state === 'loading') {
                 if (step === 0 && line.indexOf('uciok') >= 0) { step = 1; w.postMessage('setoption name Hash value ' + cfg.hash); w.postMessage('isready'); }
-                else if (step === 1 && line.indexOf('readyok') >= 0) { step = 2; state = 'ready'; clearTimeout(timer); resolve(true); }
+                else if (step === 1 && line.indexOf('readyok') >= 0) { step = 2; state = 'ready'; clearTimeout(timer); if (cfg.flag) { try { localStorage.setItem(cfg.flag, '1'); } catch (x) { /* ignore */ } } resolve(true); }
               } else onLine(line);
             };
             w.postMessage('uci');
           } catch (x) { clearTimeout(timer); fail('start ' + x); resolve(false); }
         };
-        // check the .wasm is really uploaded first, so a missing file fails at once instead of after a long wait
-        fetch(cfg.wasm, { method: 'HEAD', cache: 'no-store' }).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); begin(); }, () => begin()).catch(() => { clearTimeout(timer); fail('missing ' + cfg.wasm); resolve(false); });
+        // check the .wasm is really uploaded first, so a missing file fails at once instead of after a long wait.
+        // The big engine may be uploaded in pieces (sf-full-1.bin, sf-full-2.bin ...): they are joined here, then handed to the engine.
+        const gone = () => { clearTimeout(timer); fail('missing ' + cfg.wasm); resolve(false); };
+        fetch(cfg.wasm, { method: 'HEAD', cache: 'no-store' }).then((r) => {
+          if (r.ok) return begin();
+          if (!cfg.parts) throw new Error('HTTP ' + r.status);
+          return joinParts().then((u) => { if (!u) throw new Error('no parts'); begin(u); });
+        }, () => begin()).catch(gone);
       });
       return loading;
     }
-
+    /** Download sf-full-1.bin, sf-full-2.bin ... (as many as exist) and join them into one address the engine can read. */
+    async function joinParts() {
+      let n = 0;
+      while (n < 12) {
+        let r = null;
+        try { r = await fetch(cfg.parts + (n + 1) + '.bin', { method: 'HEAD', cache: 'no-store' }); } catch (x) { r = null; }
+        if (!r || !r.ok) break;
+        n++;
+      }
+      if (!n) return null;
+      const got = await Promise.all(Array.from({ length: n }, (_, k) => fetch(cfg.parts + (k + 1) + '.bin').then((r) => { if (!r.ok) throw new Error('part ' + (k + 1)); return r.blob(); })));
+      return URL.createObjectURL(new Blob(got, { type: 'application/wasm' }));
+    }
     /** One search at a time; extra calls wait their turn. Resolves null if the engine is not there or too slow. */
     function analyse(fen, o) {
       o = o || {};
@@ -114,6 +134,7 @@
     return { load, analyse, pickMove, stop, newGame, legalOf, alg, available: () => state === 'ready', failed: () => state === 'failed', loading: () => state === 'loading', MATE, name: cfg.name };
   }
 
-  LP.Stockfish = make({ url: 'stockfish.js', wasm: 'stockfish.wasm', hash: 32, timeout: 15000, name: 'Stockfish' });
-  LP.stockfishFor = () => LP.Stockfish;
+  LP.Stockfish = make({ url: 'stockfish.js', wasm: 'stockfish.wasm', hash: 32, timeout: 15000, name: 'Stockfish Lite' });
+  LP.StockfishFull = make({ url: 'stockfish-full.js', wasm: 'stockfish-full.wasm', parts: 'sf-full-', flag: 'localPieces.fullLoaded', hash: 64, timeout: 150000, name: 'Stockfish' });   // a 99 MB download the first time
+  LP.stockfishFor = (level) => (level === 'stockfishfull' ? LP.StockfishFull : LP.Stockfish);
 })();

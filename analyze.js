@@ -152,6 +152,7 @@
     const idxs = [];
     e.moves.forEach((m, i) => { if (want(i) && !an.plies[i]) idxs.push(i); });
     const job = { mode: e.mode, fen: e.fen || null, secrets: { w: e.secrets.w, b: e.secrets.b }, moves: e.moves, idxs, budget: 50000 };
+    if (idxs.length && job.mode === 'basic' && LP.engineChoice) await LP.engineChoice();   // the one-time Lite or Full question
     const SF = LP.analysisEngine ? LP.analysisEngine() : LP.Stockfish;
     const useSf = !!(idxs.length && SF && job.mode === 'basic' && await SF.load());   // Stockfish double-checks every move (Classic-style games only)
     if (useSf) { job.budget = 20000; pScale = [0, 55]; }

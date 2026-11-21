@@ -114,7 +114,7 @@
   const engineMode = (m) => (m === 'secret' ? 'secret' : m === 'snail' ? 'snail' : m === 'gamble' ? 'gamble' : m === 'guess' ? 'guess' : m === 'royale' ? 'royale' : 'basic');
   const isTwist = () => mode === 'snail' || mode === 'gamble' || mode === 'guess' || mode === 'royale';   // custom rules the move-strength labels, Analyze and Export know nothing about
   const MODE_LABEL = { basic: 'Classic', secret: 'Secret Queen', tas: 'Sandbox', bullet: 'Bullet', rapid: 'Rapid', snail: 'Immortal Snail', online: 'Online', gamble: 'Gamblite Chess', guess: 'Guess Who Chess', royale: 'Chess Royale' };
-  const LEVEL_LABEL = { dumb: 'Dumb', easy: 'Easy', medium: 'Medium', hard: 'Hard', insane: 'Insane', godly: 'Godly', patricia: 'Patricia', brilliant: 'Mr. Brilliant', stockfish: 'Stockfish', stockfishfull: 'Stockfish', copycat: 'CopyCat' };
+  const LEVEL_LABEL = { dumb: 'Dumb', easy: 'Easy', medium: 'Medium', hard: 'Hard', insane: 'Insane', godly: 'Godly', patricia: 'Patricia', brilliant: 'Mr. Brilliant', stockfish: 'Stockfish Lite', stockfishfull: 'Stockfish', copycat: 'CopyCat' };
   const cname = (c) => (c === WHITE ? 'White' : 'Black');
   const nameOf = (c) => viewNames[c] || cname(c);
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -957,7 +957,8 @@
     { id: 'brilliant', img: 'brilliant-pfp.png', col: '#26c9c3', n: 5, tag: 'About 3000', sub: 'Hunts for brilliant moves. Loves a sacrifice and takes big risks.', sf: true },
     { id: 'patricia', img: 'patricia-pfp.png', col: '#e04848', n: 5, tag: 'About 3200', sub: 'The killer engine. Attacks, sacrifices and hates draws.', sf: true },
     { id: 'copycat', img: 'copycat-pfp.png', col: '#8e7cc3', n: 5, tag: '? Elo', sub: 'Mirrors your moves, then turns into Stockfish if it cannot copy you or falls 6 points behind.', sf: true },
-    { id: 'stockfish', img: 'stockfish-pfp.png', col: '#2ecc71', n: 5, tag: 'About 3300', sub: 'The real Stockfish engine. Loads in a moment.', sf: true },
+    { id: 'stockfish', img: 'stockfish-pfp.png', col: '#2ecc71', n: 5, tag: 'About 3300', sub: 'Stockfish Lite: the small, fast engine. Loads in a moment.', sf: true },
+    { id: 'stockfishfull', img: 'stockfish-pfp.png', col: '#1fa463', n: 5, tag: 'About 3500', sub: 'Full Stockfish with the big network. Needs a one-time 99 MB download.', sf: true },
   ];
   const SF_MODES = ['basic', 'bullet', 'rapid', 'tas'];   // Stockfish (and the bots built on it) only know standard chess
   const SF_BOTS = { stockfish: 'stockfish-pfp.png', stockfishfull: 'stockfish-pfp.png', copycat: 'copycat-pfp.png', patricia: 'patricia-pfp.png', brilliant: 'brilliant-pfp.png' };   // levels played by the engine, with their pictures
@@ -1722,7 +1723,8 @@
       }
     }
     if (copyOff && !over) setStatus('', 'dim', 'CopyCat stopped copying<span class="dots"><i>.</i><i>.</i><i>.</i></span>');
-    return L.Stockfish.pickMove(g, ms);
+    const E = L.StockfishFull.available() ? L.StockfishFull : L.Stockfish;
+    return E.pickMove(g, ms);
   }
 
   /** The computer plays its move now, if it is its turn. */
@@ -1762,9 +1764,9 @@
       }
       if (SF_BOTS[level] && window.LP.Stockfish && mode !== 'secret') {   // the real engine; if it is missing (or slow) the Insane search plays instead
         const SF = window.LP.stockfishFor(level), fb = () => searchMove(game, 'insane', game.turn, seen, done, maxMs, level === 'patricia' ? 'aggressive' : botStyle);
-        const ms = maxMs ? Math.min(1000, maxMs) : 1000;
+        const ms = maxMs ? Math.min(1000, maxMs) : level === 'stockfishfull' ? 1500 : 1000;
         const want = level === 'copycat' ? window.LP.Stockfish : SF;
-        if (!want.available() && !want.failed()) setStatus('', 'dim', 'Loading Stockfish' + '<span class="dots"><i>.</i><i>.</i><i>.</i></span>');
+        if (!want.available() && !want.failed()) setStatus('', 'dim', (level === 'stockfishfull' ? 'Loading Stockfish (99 MB, first time only)' : 'Loading Stockfish') + '<span class="dots"><i>.</i><i>.</i><i>.</i></span>');
         const run = level === 'copycat' ? copycatPick(game, ms)
           : level === 'stockfish' || level === 'stockfishfull' ? SF.pickMove(game, ms)
           : window.LP.BotStyle.pick(game, level, ms, { repeats: (m) => { if (!m) return false; game.makeMove(m); const k = positionKey(game); game.unmakeMove(); return (seen.get(k) || 0) >= 1; } });
@@ -2615,7 +2617,7 @@
   $('#redo-btn').addEventListener('click', () => navigate(1));
 
   /* TAS hint: the 3 best moves for the side to move, numbered 1-3 on the board */
-  $('#hint-btn').addEventListener('click', () => runHint(false));
+  $('#hint-btn').addEventListener('click', () => { if (game.mode === 'basic' && window.LP.engineChoice) window.LP.engineChoice().then(() => runHint(false)); else runHint(false); });
   /** Show the hint. `viaMod`: started from the mod menu in a Classic game (also works in 2-player games and in games from other modes' rules). */
   function runHint(viaMod) {
     if (phase !== 'play' || aiBusy || !humanTurn() || (!viaMod && !ai)) return;

@@ -15,7 +15,7 @@
 
   const prefs = {
     get: (k) => P[k],
-    set(k, v) { P[k] = v; save(); },
+    set(k, v) { P[k] = v; save(); if (k === 'engine') { try { localStorage.setItem('localPieces.engineAsked', '1'); } catch (e) { /* ignore */ } } },
     all: () => Object.assign({}, P),
     /** Remember what you picked last time (computer level, clock, players...). */
     remember(k, v) { P.last[k] = v; save(); },
@@ -104,7 +104,59 @@
   const ms = $('#moves-scroll');
   if (ms) new MutationObserver(() => { if (P.notation === 'fig') figurine(); }).observe(ms, { childList: true, subtree: true });
   /** The engine used by Analyze and the Sandbox hint, and how long it thinks. */
-  LP.analysisEngine = () => LP.Stockfish;
+  LP.analysisEngine = () => (P.engine === 'full' && LP.StockfishFull && !LP.StockfishFull.failed() ? LP.StockfishFull : LP.Stockfish);
+  /**
+   * The one-time question: Stockfish Lite or Full? Asked the first time Analyze or a hint needs the engine, only while the big file
+   * is on the site but not yet downloaded. It cannot be skipped (no Escape, no tapping outside). Resolves once the choice is made.
+   */
+  const ASK = 'localPieces.engineAsked', LOADED = 'localPieces.fullLoaded';
+  const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const lsSet = (k) => { try { localStorage.setItem(k, '1'); } catch (e) { /* ignore */ } };
+  const bigThere = () => fetch('stockfish-full.wasm', { method: 'HEAD', cache: 'no-store' }).then((r) => r.ok || fetch('sf-full-1.bin', { method: 'HEAD', cache: 'no-store' }).then((q) => q.ok)).catch(() => false);
+  let askP = null;
+  LP.engineChoice = () => {
+    if (askP) return askP;
+    if (lsGet(ASK)) return Promise.resolve();
+    const F = LP.StockfishFull;
+    if (P.engine === 'full' || lsGet(LOADED) || (F && F.available())) { lsSet(ASK); return Promise.resolve(); }
+    if (!F || F.failed()) return Promise.resolve();
+    askP = bigThere().then((ok) => (ok ? askEngine() : null)).then(() => { askP = null; }, () => { askP = null; });
+    return askP;
+  };
+  function askEngine() {
+    return new Promise((done) => {
+      const bg = document.createElement('div');
+      bg.className = 'sheet-bg';
+      bg.id = 'eng-ask';
+      bg.style.zIndex = 70;
+      bg.setAttribute('role', 'dialog');
+      bg.setAttribute('aria-modal', 'true');
+      bg.innerHTML = '<div class="sheet"><h2>Which Stockfish?<span class="sub">Analyze and hints use Stockfish. You only choose once.</span></h2>'
+        + '<button type="button" class="eng-opt" data-e="lite"><b>Stockfish Lite</b><small>Ready straight away. A little weaker.</small></button>'
+        + '<button type="button" class="eng-opt big" data-e="full"><b>Stockfish Full</b><small>Stronger. One-time 99 MB download, then it is kept on this device.</small></button>'
+        + '<p class="note">You can change this any time in Settings.</p></div>';
+      const block = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); } };
+      window.addEventListener('keydown', block, true);
+      const finish = () => { window.removeEventListener('keydown', block, true); bg.remove(); done(); };
+      document.body.appendChild(bg);
+      const sheetEl = bg.querySelector('.sheet');
+      bg.querySelectorAll('.eng-opt').forEach((b) => {
+        b.onclick = () => {
+          lsSet(ASK);
+          if (b.dataset.e === 'lite') { prefs.set('engine', 'lite'); finish(); return; }
+          prefs.set('engine', 'full');
+          sheetEl.innerHTML = '<h2>Downloading Stockfish Full<span class="sub">One time only, about 99 MB. Please keep this page open.</span></h2><div class="an-bar"><i class="eng-load"></i></div>';
+          LP.StockfishFull.load().then((ok) => {
+            if (ok) { finish(); return; }
+            prefs.set('engine', 'lite');
+            sheetEl.innerHTML = '<h2>Could not download it<span class="sub">Stockfish Lite will be used instead. You can try Full again in Settings.</span></h2><button type="button" class="eng-opt" id="eng-ok"><b>OK</b></button>';
+            sheetEl.querySelector('#eng-ok').onclick = finish;
+          });
+        };
+      });
+      const first = bg.querySelector('.big'); if (first) first.focus();
+    });
+  }
   LP.depthScale = () => ({ fast: 0.5, normal: 1, deep: 2.2 })[P.depth] || 1;
   const buzz = (n) => { if (P.haptic && navigator.vibrate) { try { navigator.vibrate(({ move: 8, capture: 18, castle: 12, check: [20, 40, 20], win: [30, 50, 30, 50, 60], lose: 80, goal: 25 })[n] || 0); } catch (e) { /* not supported */ } } };
 
@@ -118,7 +170,7 @@
     board: { t: 'Board colours', keys: ['light', 'dark'], open: true },
     games: { t: 'Games', keys: ['warn', 'spectate', 'premove', 'preGhost', 'annot', 'quick', 'shortcuts', 'input', 'autoq', 'newsPopup'], open: true },
     moves: { t: 'Move display', keys: ['nolast', 'nocoords', 'notation'], open: false },
-    engine: { t: 'Analysis', keys: ['depth'], open: false },
+    engine: { t: 'Engine and analysis', keys: ['engine', 'depth'], open: false },
     access: { t: 'Accessibility', keys: ['cb', 'hc', 'big'], open: false },
     data: { t: 'Help and data', keys: [], open: false },
   };
@@ -149,6 +201,7 @@
       row('pf-nocoords', 'Hide board coordinates', 'Remove the letters and numbers on the edge of the board.', P.nocoords) +
       seg('notation', 'Notation', 'How moves are written in the move list.', [['san', 'Nf3'], ['fig', '♘f3']])) +
     grp('engine',
+      seg('engine', 'Analysis engine', 'Used by Analyze and the Sandbox hint. Full is stronger, but needs the one-time 99 MB download.', [['lite', 'Stockfish Lite'], ['full', 'Stockfish']]) +
       seg('depth', 'Thinking time', 'Longer makes Analyze slower and its ratings more careful.', [['fast', 'Fast'], ['normal', 'Normal'], ['deep', 'Deep']])) +
     grp('access',
       row('pf-cb', 'Colour-blind friendly highlights', 'Blue and orange instead of green and red for highlights and check.', P.cb) +
