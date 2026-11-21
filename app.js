@@ -56,6 +56,10 @@
   let selected = -1;
   let legalTargets = [];
   let preHold = -1;   // after a premove was dropped as illegal, the rest wait until one more full move has been played
+  let preFresh = false;
+  const ANN = { g: 'rgba(30,150,80,.85)', r: 'rgba(214,52,52,.85)', b: 'rgba(40,110,225,.85)', y: 'rgba(235,165,15,.92)' };
+  let userArrows = [], userHl = new Map(), annMode = false, annColor = 'g', annDrag = null, annSwallow = 0;
+  let hvDest = null, hvOrg = null;
   let pre = [], preSel = -1, preDest = new Set();   // premoves: the queue, the piece picked for the next one, and where it may go
   let pickSel = -1;
   let flipped = false;
@@ -110,7 +114,7 @@
   const engineMode = (m) => (m === 'secret' ? 'secret' : m === 'snail' ? 'snail' : m === 'gamble' ? 'gamble' : m === 'guess' ? 'guess' : m === 'royale' ? 'royale' : 'basic');
   const isTwist = () => mode === 'snail' || mode === 'gamble' || mode === 'guess' || mode === 'royale';   // custom rules the move-strength labels, Analyze and Export know nothing about
   const MODE_LABEL = { basic: 'Classic', secret: 'Secret Queen', tas: 'Sandbox', bullet: 'Bullet', rapid: 'Rapid', snail: 'Immortal Snail', online: 'Online', gamble: 'Gamblite Chess', guess: 'Guess Who Chess', royale: 'Chess Royale' };
-  const LEVEL_LABEL = { dumb: 'Dumb', easy: 'Easy', medium: 'Medium', hard: 'Hard', insane: 'Insane', godly: 'Godly', patricia: 'Patricia', brilliant: 'Mr. Brilliant', stockfish: 'Stockfish' };
+  const LEVEL_LABEL = { dumb: 'Dumb', easy: 'Easy', medium: 'Medium', hard: 'Hard', insane: 'Insane', godly: 'Godly', patricia: 'Patricia', brilliant: 'Mr. Brilliant', stockfish: 'Stockfish Lite', stockfishfull: 'Stockfish', copycat: 'CopyCat' };
   const cname = (c) => (c === WHITE ? 'White' : 'Black');
   const nameOf = (c) => viewNames[c] || cname(c);
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -488,7 +492,11 @@
         el._code = code;
       }
     }
+    paintGhosts();
+    paintPreTint();
     drawPre();
+    drawAnn();
+    hvClear();
   }
 
   /** The square of the mover's secret piece while they are looking at it, otherwise -1. */
@@ -917,7 +925,7 @@
     levelMenu((white ? 'White' : 'Black') + ' computer', white ? 'Pick the first computer.' : 'Pick the second computer.', (lv) => {
       if (white) askBot(m, BLACK, lv);
       else { closeSheet(); startBots(m, whiteLevel, lv); }
-    }, SF_MODES.includes(m));
+    }, SF_MODES.includes(m), !white && whiteLevel === 'copycat' ? 'copycat' : null);   // CopyCat cannot play itself
   }
 
   function startBots(m, wl, bl) {
@@ -948,10 +956,12 @@
     { id: 'insane', ic: '3', col: '#ff6b6b', n: 5, tag: 'About 2200',    sub: 'Plays book lines and hunts for brilliant moves.' },
     { id: 'brilliant', img: 'brilliant-pfp.png', col: '#26c9c3', n: 5, tag: 'About 3000', sub: 'Hunts for brilliant moves. Loves a sacrifice and takes big risks.', sf: true },
     { id: 'patricia', img: 'patricia-pfp.png', col: '#e04848', n: 5, tag: 'About 3200', sub: 'The killer engine. Attacks, sacrifices and hates draws.', sf: true },
-    { id: 'stockfish', img: 'stockfish-pfp.png', col: '#2ecc71', n: 5, tag: 'About 3200', sub: 'The full Stockfish engine, running in your browser.', sf: true },
+    { id: 'copycat', img: 'copycat-pfp.png', col: '#8e7cc3', n: 5, tag: '? Elo', sub: 'Mirrors your moves, then turns into Stockfish if it cannot copy you or falls 6 points behind.', sf: true },
+    { id: 'stockfish', img: 'stockfish-pfp.png', col: '#2ecc71', n: 5, tag: 'About 3300', sub: 'Stockfish Lite: the small, fast engine. Loads in a moment.', sf: true },
+    { id: 'stockfishfull', img: 'stockfish-pfp.png', col: '#1fa463', n: 5, tag: 'About 3500', sub: 'Full Stockfish with the big network. Needs a one-time 99 MB download.', sf: true },
   ];
   const SF_MODES = ['basic', 'bullet', 'rapid', 'tas'];   // Stockfish (and the bots built on it) only know standard chess
-  const SF_BOTS = { stockfish: 'stockfish-pfp.png', patricia: 'patricia-pfp.png', brilliant: 'brilliant-pfp.png' };   // levels played by the engine, with their pictures
+  const SF_BOTS = { stockfish: 'stockfish-pfp.png', stockfishfull: 'stockfish-pfp.png', copycat: 'copycat-pfp.png', patricia: 'patricia-pfp.png', brilliant: 'brilliant-pfp.png' };   // levels played by the engine, with their pictures
   const lastOf = (k) => (window.LP && window.LP.prefs ? window.LP.prefs.last(k) : undefined);
   const remember = (k, v) => { try { if (window.LP && window.LP.prefs) window.LP.prefs.remember(k, v); } catch (e) { /* ignore */ } };
   const LAST_TAG = ' <em class="last-tag">Last used</em>';
@@ -959,11 +969,11 @@
   const STYLE_INFO = [['normal', 'Normal'], ['solid', 'Solid'], ['aggressive', 'Aggressive'], ['defensive', 'Defensive']];
   let botStyle = lastOf('style') || 'normal';
   if (!STYLE_INFO.some((x) => x[0] === botStyle)) botStyle = 'normal';
-  function levelMenu(title, sub, cb, sf) {
+  function levelMenu(title, sub, cb, sf, hide) {
     const lastLv = lastOf('level');
     openSheet(`<h2>${esc(title)}${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</h2>
       <div class="lv-list">
-        ${LEVEL_INFO.filter((l) => !l.sf || sf).map((l) => `<button class="lv-card" data-lv="${l.id}" style="--lc:${l.col}">
+        ${LEVEL_INFO.filter((l) => (!l.sf || sf) && l.id !== hide).map((l) => `<button class="lv-card" data-lv="${l.id}" style="--lc:${l.col}">
           <span class="lv-ic" aria-hidden="true">${l.img ? `<img class="lv-fish" src="${l.img}" alt="">` : `<i class="ic-sp" style="--i:${l.ic}"></i>`}</span>
           <span class="lv-text"><span class="lv-top"><b>${LEVEL_LABEL[l.id]}</b><em>${l.tag}</em>${l.id === lastLv ? LAST_TAG : ''}</span><span class="lv-sub">${l.sub}</span>
             <span class="lv-meter" aria-hidden="true">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= l.n ? 'on' : ''}"></i>`).join('')}</span></span>
@@ -972,7 +982,7 @@
       <div class="lv-style"><span>Style <small>(Hard, Godly, Insane)</small></span><div class="chips">${STYLE_INFO.map((x) => `<button type="button" class="chip${x[0] === botStyle ? ' on' : ''}" data-st="${x[0]}">${x[1]}</button>`).join('')}</div></div>
       <button class="btn wide" id="df-x">Cancel</button>`, true);
     sheet.querySelectorAll('[data-st]').forEach((b) => { b.onclick = () => { botStyle = b.dataset.st; remember('style', botStyle); sheet.querySelectorAll('[data-st]').forEach((x) => x.classList.toggle('on', x === b)); }; });
-    sheet.querySelectorAll('[data-lv]').forEach((b) => { b.onclick = () => { remember('level', b.dataset.lv); if (SF_BOTS[b.dataset.lv] && window.LP.Stockfish) window.LP.Stockfish.load(); cb(b.dataset.lv); }; });
+    sheet.querySelectorAll('[data-lv]').forEach((b) => { b.onclick = () => { remember('level', b.dataset.lv); if (SF_BOTS[b.dataset.lv] && window.LP.Stockfish) window.LP.stockfishFor(b.dataset.lv).load(); cb(b.dataset.lv); }; });
     $('#df-x').onclick = closeSheet;
   }
 
@@ -983,6 +993,8 @@
   let gameStart = 0;
   function freshGame(m) {
     liveId = null;
+    clearAnn();
+    copyOff = false;
     gameStart = Date.now();
     mode = m;
     game.mode = engineMode(m);
@@ -1034,6 +1046,9 @@
     document.documentElement.classList.toggle('is-tas', m === 'tas');
     $('#mode-title').textContent = pz ? pz.name + ' · ' + pz.goal : startFen && m !== 'guess' ? 'Custom position' : MODE_LABEL[m];
   }
+
+  /** Starts a normal Classic game against a computer level (used by the first-time lesson). */
+  function startVs(lv) { startFen = null; pz = null; guardSlots(() => { pendingTc = null; startGame('basic', false, lv); }); }
 
   function startGame(m, keepNames, level) {
     if (m === 'guess') startFen = null;   // every Guess Who game starts with fresh arrangements
@@ -1685,6 +1700,33 @@
     botMove();
   }
 
+  /* CopyCat: mirrors the other side's last move (same file, ranks flipped: e2-e4 is answered by e7-e5). As White it opens 1.e3.
+   * It stops copying for good when no legal move of the same kind of piece reaches the mirrored square, or when the other side is COPY_STOP points ahead in material
+   * (pawn 1, knight and bishop 3, rook 5, queen 9). After that it plays as Stockfish (the Full engine if that is already loaded). */
+  const COPY_STOP = 6;
+  let copyOff = false;
+  function copycatPick(g, ms) {
+    const L = window.LP, me = g.turn, foe = me === WHITE ? BLACK : WHITE;
+    const find = (from, to, pr) => g.legalMoves().find((m) => m.from === from && m.to === to && (m.promo || 0) === (pr || 0)) || null;
+    const flip = (q) => ((7 - (q >> 4)) << 4) | (q & 7);
+    if (me === WHITE && fullMoves.length === 0 && !copyOff) { const e3 = find(0x14, 0x24, 0); if (e3) return Promise.resolve(e3); }
+    const last = fullMoves[fullMoves.length - 1];
+    if (!copyOff && last && last.from >= 0) {
+      if (L.BotStyle.mat(g, foe) - L.BotStyle.mat(g, me) >= COPY_STOP) copyOff = true;
+      else {
+        // the mirror move: the same kind of piece going to the mirrored square (from the mirrored square if it can, else from wherever it can; so after 1.e3 e5 the pawn on e3 answers with e4)
+        const kind = g.board[last.to] & 7, to = flip(last.to), pr = last.promo || 0;
+        const cands = g.legalMoves().filter((m) => m.to === to && (g.board[m.from] & 7) === kind && (m.promo || 0) === pr);
+        const m = cands.find((x) => x.from === flip(last.from)) || cands[0];
+        if (m) return Promise.resolve(m);
+        copyOff = true;
+      }
+    }
+    if (copyOff && !over) setStatus('', 'dim', 'CopyCat stopped copying<span class="dots"><i>.</i><i>.</i><i>.</i></span>');
+    const E = L.StockfishFull.available() ? L.StockfishFull : L.Stockfish;
+    return E.pickMove(g, ms);
+  }
+
   /** The computer plays its move now, if it is its turn. */
   function botMove() {
     const level = bots ? bots[game.turn] : (ai && !playBoth && game.turn === ai.color ? ai.level : null);
@@ -1716,10 +1758,17 @@
           else updateControls();
         }, Math.max(0, minWait - (Date.now() - t0)));
       };
+      if (bots && game.turn === BLACK && fullMoves.length === 1 && bots[WHITE] === 'copycat' && fullMoves[0].from === 0x14 && fullMoves[0].to === 0x24) {   // CopyCat opened 1.e3: the game answers 1...e5 for the other side, and the copying starts from there
+        const e5 = game.legalMoves().find((x) => x.from === 0x64 && x.to === 0x44);
+        if (e5) { done(e5); return; }
+      }
       if (SF_BOTS[level] && window.LP.Stockfish && mode !== 'secret') {   // the real engine; if it is missing (or slow) the Insane search plays instead
-        const SF = window.LP.Stockfish, fb = () => searchMove(game, 'insane', game.turn, seen, done, maxMs, level === 'patricia' ? 'aggressive' : botStyle);
-        const ms = maxMs ? Math.min(1000, maxMs) : 1000;
-        const run = level === 'stockfish' ? SF.pickMove(game, ms)
+        const SF = window.LP.stockfishFor(level), fb = () => searchMove(game, 'insane', game.turn, seen, done, maxMs, level === 'patricia' ? 'aggressive' : botStyle);
+        const ms = maxMs ? Math.min(1000, maxMs) : level === 'stockfishfull' ? 1500 : 1000;
+        const want = level === 'copycat' ? window.LP.Stockfish : SF;
+        if (!want.available() && !want.failed()) setStatus('', 'dim', (level === 'stockfishfull' ? 'Loading Stockfish (99 MB, first time only)' : 'Loading Stockfish') + '<span class="dots"><i>.</i><i>.</i><i>.</i></span>');
+        const run = level === 'copycat' ? copycatPick(game, ms)
+          : level === 'stockfish' || level === 'stockfishfull' ? SF.pickMove(game, ms)
           : window.LP.BotStyle.pick(game, level, ms, { repeats: (m) => { if (!m) return false; game.makeMove(m); const k = positionKey(game); game.unmakeMove(); return (seen.get(k) || 0) >= 1; } });
         run.then((mv) => { if (token !== aiToken) return; if (mv) done(mv); else fb(); }, () => { if (token === aiToken) fb(); });
         return;
@@ -1788,7 +1837,7 @@
     const b = preBoard(), me = preMe(), p = b[s], own = !!p && (p & 24) === me;
     if (preSel >= 0 && preDest.has(s)) {
       const from = preSel, last = (b[from] & 7) === PAWN && (s >> 4) === (me === WHITE ? 7 : 0);
-      const add = (promo) => { pre.push({ from, to: s, promo: promo || 0 }); preSel = -1; preDest = new Set(); paintPre(); preRunSoon(); };
+      const add = (promo) => { pre.push({ from, to: s, promo: promo || 0 }); preFresh = true; preSel = -1; preDest = new Set(); paintPre(); preRunSoon(); };
       if (last) showPromotion({ from, to: s }, (m) => add(m.promo), me); else add(0);   // the promotion piece is asked for straight away
       return;
     }
@@ -1827,7 +1876,48 @@
       el.classList.toggle('pre-dest', has);
       el.classList.toggle('pre-cap', has && !!pb[sq]);
     }
+    paintGhosts();
+    paintPreTint();
     drawPre();
+  }
+  /** Green or red tint on the squares of the queued premoves (a warning only). */
+  function paintPreTint() {
+    for (const key in squareEls) squareEls[key].classList.remove('pre-ok', 'pre-bad');
+    if (G !== game || !pre.length) return;
+    const ok = preLegality();
+    pre.forEach((m, i) => { const el = squareEls[m.to]; if (el) el.classList.add(ok[i] ? 'pre-ok' : 'pre-bad'); });
+  }
+  /** For each queued premove: would it be legal if it were played right now (the opponent passing)? Only used to tint the squares, nothing is blocked. */
+  function preLegality() {
+    const me = preMe(), out = [];
+    let g = null, ok = true;
+    try { g = window.MoveRating.clone(game); } catch (e) { return pre.map(() => true); }
+    for (const m of pre) {
+      if (ok) {
+        g.turn = me;
+        const lm = g.legalMoves().find((x) => x.from === m.from && x.to === m.to && (x.promo || 0) === (m.promo || 0));
+        if (lm) g.makeMove(lm); else ok = false;
+      }
+      out.push(ok);
+    }
+    return out;
+  }
+  /** Ghost pieces: a see-through copy of each piece where the queued premoves will put it; the pieces they leave fade. */
+  function paintGhosts() {
+    const showing = G === game && pre.length && !(window.LP.prefs && window.LP.prefs.get('preGhost') === false);
+    const pb = showing ? preBoard() : null;
+    for (const key in squareEls) {
+      const sq = +key, el = squareEls[sq], real = game.board[sq], want = showing ? pb[sq] : 0, differs = showing && want !== real;
+      let gh = el._ghost;
+      if (!differs || !want) { if (gh) { gh.remove(); el._ghost = null; el._gcode = 0; } }
+      else if (el._gcode !== want) {
+        if (!gh) { gh = document.createElement('span'); el.appendChild(gh); el._ghost = gh; }
+        gh.className = 'piece pre-ghost ' + (isWhite(want) ? 'w' : 'b');
+        gh.textContent = glyph(want);
+        el._gcode = want;
+      }
+      el.classList.toggle('pre-gone', !!differs && !!real);
+    }
   }
   /** Red arrows for the queued premoves. */
   function drawPre() {
@@ -1858,14 +1948,130 @@
       const ln = node(0, 'line'), ci = node(1, 'circle'), tx = node(2, 'text');
       const set = (e, o) => { for (const key in o) e.setAttribute(key, o[key]); };
       set(ln, { x1: a[0], y1: a[1], x2: z[0] - dx * k, y2: z[1] - dy * k, stroke: 'rgba(229,72,77,.8)', 'stroke-width': z[2] * 0.17, 'stroke-linecap': 'round', 'marker-end': 'url(#pre-ah)' });
+      const age = pre.length - 1 - i, fade = age >= 3 ? 0.35 : age === 2 ? 0.55 : age === 1 ? 0.75 : 1;   // the newest arrow stays the strongest
+      ln.setAttribute('opacity', fade); ci.setAttribute('opacity', fade); tx.setAttribute('opacity', fade);
+      ln.classList.toggle('pre-in', preFresh && age === 0);
       const show = pre.length > 1;
       set(ci, { cx: a[0], cy: a[1], r: z[2] * 0.17, fill: 'rgba(229,72,77,.95)', display: show ? '' : 'none' });
       set(tx, { x: a[0], y: a[1] + z[2] * 0.07, 'font-size': z[2] * 0.2, 'font-weight': 700, 'text-anchor': 'middle', fill: '#fff', display: show ? '' : 'none' });
       tx.textContent = String(i + 1);
     });
+    preFresh = false;
   }
-  window.addEventListener('resize', () => { if (pre.length) drawPre(); });
-  boardEl.addEventListener('contextmenu', (e) => { if (pre.length || preSel >= 0) { e.preventDefault(); clearPre(); paintPre(); } });
+  window.addEventListener('resize', () => { if (pre.length) drawPre(); drawAnn(); });
+
+  /* ------------------------------------------------------------ Free annotations (right-click or Shift+click to draw)
+   * Right-drag draws an arrow, right-click toggles a square highlight. Colour: plain = green, Shift = red, Ctrl/Cmd = blue, Alt = yellow.
+   * A right-click with no drag, while premoves are queued or a piece is picked, cancels those instead. The pencil button turns on drawing with
+   * plain taps (for touch screens). Annotations stay through moves; Escape, the x button or a new game clears them. */
+  const annOn = () => !(window.LP.prefs && window.LP.prefs.get('annot') === false);
+  const annCount = () => userArrows.length + userHl.size;
+  function clearAnn() { userArrows = []; userHl = new Map(); annDrag = null; drawAnn(); }
+  const annSq = (e) => { const t = document.elementFromPoint(e.clientX, e.clientY), q = t && t.closest ? t.closest('.square') : null; return q && boardEl.contains(q) ? +q.dataset.sq : -1; };
+  function annBar() {
+    const wrap = boardEl.parentElement;
+    let bar = wrap.querySelector('.ann-bar');
+    if (!annOn()) { if (bar) bar.remove(); return; }
+    if (!bar) {
+      bar = document.createElement('div'); bar.className = 'ann-bar';
+      bar.innerHTML = '<button type="button" class="ann-pen" aria-label="Draw arrows and highlights" title="Draw arrows and highlights">✎</button><span class="ann-cols">' + ['g', 'r', 'b', 'y'].map((c) => '<button type="button" class="ann-c" data-c="' + c + '" style="background:' + ANN[c] + '" aria-label="Colour"></button>').join('') + '</span><button type="button" class="ann-x" aria-label="Clear drawings" title="Clear drawings">×</button>';
+      wrap.appendChild(bar);
+      bar.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const b = e.target.closest('button'); if (!b) return;
+        if (b.classList.contains('ann-pen')) annMode = !annMode;
+        else if (b.classList.contains('ann-c')) annColor = b.dataset.c;
+        else if (b.classList.contains('ann-x')) clearAnn();
+        annBar();
+      });
+    }
+    bar.classList.toggle('on', annMode);
+    bar.classList.toggle('has', annCount() > 0);
+    bar.querySelectorAll('.ann-c').forEach((b) => b.classList.toggle('sel', b.dataset.c === annColor));
+    boardEl.classList.toggle('annotating', annMode);
+  }
+  function drawAnn() {
+    const wrap = boardEl.parentElement;
+    let svg = wrap.querySelector('.user-ann');
+    annBar();
+    const prev = annDrag && annDrag.to !== annDrag.from && annDrag.to >= 0 ? { from: annDrag.from, to: annDrag.to, color: annDrag.color, p: 1 } : null;
+    if (!annCount() && !prev) { if (svg) svg.remove(); return; }
+    if (!svg) { svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('class', 'user-ann'); wrap.appendChild(svg); }
+    const w = wrap.getBoundingClientRect();
+    svg.setAttribute('viewBox', '0 0 ' + w.width + ' ' + w.height);
+    const box = (s) => { const el = squareEls[s]; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left - w.left, y: r.top - w.top, w: r.width, cx: r.left - w.left + r.width / 2, cy: r.top - w.top + r.height / 2 }; };
+    let out = '';
+    userHl.forEach((c, s) => { const b = box(s); if (b) out += `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.w}" fill="${ANN[c]}" opacity=".55"/>`; });
+    const arrow = (a) => {
+      const A = box(a.from), Z = box(a.to); if (!A || !Z) return '';
+      const dx = Z.cx - A.cx, dy = Z.cy - A.cy, d = Math.hypot(dx, dy) || 1, ux = dx / d, uy = dy / d, u = A.w;
+      const hl = u * 0.34, hw = u * 0.2, tipx = Z.cx - ux * u * 0.1, tipy = Z.cy - uy * u * 0.1, bx = tipx - ux * hl, by = tipy - uy * hl, sx = A.cx + ux * u * 0.18, sy = A.cy + uy * u * 0.18;
+      const col = ANN[a.color];
+      return `<g opacity="${a.p ? 0.55 : 0.85}"><line x1="${sx}" y1="${sy}" x2="${bx}" y2="${by}" stroke="${col}" stroke-width="${u * 0.16}" stroke-linecap="round"/><polygon points="${tipx},${tipy} ${bx - uy * hw},${by + ux * hw} ${bx + uy * hw},${by - ux * hw}" fill="${col}"/></g>`;
+    };
+    userArrows.forEach((a) => { out += arrow(a); });
+    if (prev) out += arrow(prev);
+    svg.innerHTML = out;
+  }
+  function annFinish(e) {
+    const d = annDrag; annDrag = null;
+    if (!d) return;
+    const to = annSq(e);
+    if (to < 0 || to === d.from) {
+      if (d.btn === 2 && (pre.length || preSel >= 0 || selected >= 0)) {   // a plain right-click cancels premoves and the picked piece
+        clearPre(); selected = -1; legalTargets = []; renderBoard(); paintPre(); return;
+      }
+      if (userHl.get(d.from) === d.color) userHl.delete(d.from); else userHl.set(d.from, d.color);
+    } else {
+      const i = userArrows.findIndex((a) => a.from === d.from && a.to === to);
+      if (i >= 0 && userArrows[i].color === d.color) userArrows.splice(i, 1);
+      else if (i >= 0) userArrows[i].color = d.color;
+      else userArrows.push({ from: d.from, to, color: d.color });
+    }
+    drawAnn();
+  }
+  boardEl.addEventListener('pointerdown', (e) => {
+    if (!annOn() || phase === 'pick-w' || phase === 'pick-b') return;
+    const tap = annMode && e.button === 0, right = e.button === 2, shiftLeft = e.button === 0 && e.shiftKey;
+    if (!tap && !right && !shiftLeft) return;
+    const s = annSq(e);
+    if (s < 0) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    const mod = (c) => (e.altKey ? 'y' : e.ctrlKey || e.metaKey ? 'b' : c);
+    annDrag = { from: s, to: s, btn: e.button, color: tap && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey ? annColor : right ? (e.altKey ? 'y' : e.ctrlKey || e.metaKey ? 'b' : e.shiftKey ? 'r' : 'g') : mod('g'), id: e.pointerId };
+    try { boardEl.setPointerCapture(e.pointerId); } catch (x) { /* fine */ }
+    hvClear();
+  }, true);
+  boardEl.addEventListener('pointermove', (e) => { if (annDrag && e.pointerId === annDrag.id) { const t = annSq(e); if (t !== annDrag.to) { annDrag.to = t; drawAnn(); } } }, true);
+  boardEl.addEventListener('pointerup', (e) => { if (annDrag && e.pointerId === annDrag.id) { annSwallow = Date.now(); annFinish(e); try { boardEl.releasePointerCapture(e.pointerId); } catch (x) { /* fine */ } } }, true);
+  boardEl.addEventListener('pointercancel', () => { if (annDrag) { annDrag = null; drawAnn(); } }, true);
+  boardEl.addEventListener('click', (e) => { if (Date.now() - annSwallow < 450) { e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+  boardEl.addEventListener('contextmenu', (e) => e.preventDefault());
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && annCount() && sheetBg.classList.contains('hidden') && $('#game').classList.contains('active')) { e.stopImmediatePropagation(); e.preventDefault(); clearAnn(); }
+  }, true);
+
+  /* ------------------------------------------------------------ Hover ring: while a piece is picked, the legal square under the mouse (and the picked piece) get a corner frame */
+  function hvClear() { if (hvDest) hvDest.style.display = 'none'; if (hvOrg) hvOrg.style.display = 'none'; }
+  function hvPlace(el, s, wrap, w) {
+    const r = squareEls[s].getBoundingClientRect();
+    el.style.display = 'block';
+    el.style.left = (r.left - w.left + r.width * 0.04) + 'px'; el.style.top = (r.top - w.top + r.height * 0.04) + 'px';
+    el.style.width = r.width * 0.92 + 'px'; el.style.height = r.height * 0.92 + 'px';
+  }
+  boardEl.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse' || annDrag || boardEl.classList.contains('dragging') || e.buttons) { hvClear(); return; }
+    const pre_ = preWaiting() && preSel >= 0, from = pre_ ? preSel : selected;
+    if (from < 0) { hvClear(); return; }
+    const t = e.target.closest ? e.target.closest('.square') : null, s = t ? +t.dataset.sq : -1;
+    const ok = s >= 0 && s !== from && (pre_ ? preDest.has(s) : legalTargets.some((m) => m.to === s));
+    if (!ok) { hvClear(); return; }
+    const wrap = boardEl.parentElement, w = wrap.getBoundingClientRect();
+    if (!hvDest) { hvDest = document.createElement('div'); hvDest.className = 'hv-ring'; hvOrg = document.createElement('div'); hvOrg.className = 'hv-ring'; wrap.appendChild(hvDest); wrap.appendChild(hvOrg); }
+    hvPlace(hvDest, s, wrap, w); hvPlace(hvOrg, from, wrap, w);
+  });
+  boardEl.addEventListener('pointerleave', hvClear);
+  boardEl.addEventListener('pointerdown', hvClear);
 
   function onSquare(s) {
     if (isArr()) { arrTap(s); return; }
@@ -2169,6 +2375,7 @@
   }
 
   function showPromotion(move, cb, color) {
+    if (window.LP.prefs && window.LP.prefs.get('autoq')) { move.promo = QUEEN; if (cb) cb(move); else doMove(move); return; }   // Settings: always promote to a queen
     pendingPromo = true;
     const col = color || game.turn;
     const ov = document.createElement('div');
@@ -2475,9 +2682,9 @@
         setTimeout(next, Math.max(0, 300 - (Date.now() - t0)));
       }, 0);
     };
-    const SF = window.LP.Stockfish;
+    const SF = window.LP.analysisEngine ? window.LP.analysisEngine() : window.LP.Stockfish;
     if (SF && !SF.failed() && game.mode === 'basic') {   // Stockfish picks the moves, scores and forced mates; the built-in engine is the fallback
-      SF.analyse(game.toFen(), { movetime: 2200, multipv: 3 }).then((r) => {
+      SF.analyse(game.toFen(), { movetime: Math.round(2200 * (window.LP.depthScale ? window.LP.depthScale() : 1)), multipv: 3 }).then((r) => {
         if (tok !== aiToken) return;
         const MATE = SF.MATE, lines = r ? r.lines.map((l) => ({ l, move: SF.legalOf(game, l.move) })).filter((x) => x.move) : [];
         if (!lines.length) { searchTop(game, 'hint', game.turn, null, onRes); return; }
@@ -2988,7 +3195,7 @@
     start: onlineStart, apply: onlineApply, setClocks: onlineClocks, remoteEnd: onlineEnd, toast: (t) => showToast(t, false),
     state: () => ({ phase, turn: game.turn === WHITE ? 'w' : 'b', me: online ? (online.me === WHITE ? 'w' : 'b') : '', active: !!online }),
   };
-  window.LP = { chessOnline, levelMenu, playPopular, dragHooks, openSheet, closeSheet, showPage, esc, LEVEL_LABEL, store, renderSavedList, session, applySettings, sides: () => sidesCtx, setSides: (m) => { sidesCtx = m || { w: 'p1', b: 'p2' }; }, fmt,
+  window.LP = { chessOnline, levelMenu, startVs, playPopular, dragHooks, openSheet, closeSheet, showPage, esc, LEVEL_LABEL, store, renderSavedList, session, applySettings, sides: () => sidesCtx, setSides: (m) => { sidesCtx = m || { w: 'p1', b: 'p2' }; }, fmt,
     resumeChess, startReplay, playPosition, MODE_LABEL, confirmSheet, MAX_SLOTS, spectateSet, liveStatus };
   // Profile loads after app.js; pick up saved settings once it is ready
   setTimeout(loadOptsFromSettings, 0);

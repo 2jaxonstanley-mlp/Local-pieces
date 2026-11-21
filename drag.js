@@ -30,10 +30,12 @@
 
     board.addEventListener('pointerdown', (e) => {
       if (d || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      if (window.LP && window.LP.prefs && window.LP.prefs.get('input') === 'tap') return;
+      if (e.button === 2 || (e.button === 0 && e.shiftKey)) return;   // those draw annotations (app.js)   // Settings: tap only
       const sqEl = sqOf(e.target);
       if (!sqEl) return;
       const s = +sqEl.dataset.sq;
-      const pe = sqEl._piece || sqEl.querySelector('.piece');
+      const pe = sqEl._piece || sqEl.querySelector('.piece:not(.pre-ghost)');
       if (!pe || (hooks.can && !hooks.can(s))) return;
       d = { id: e.pointerId, from: s, x: e.clientX, y: e.clientY, started: false, ghost: null, pe, sqEl };
     });

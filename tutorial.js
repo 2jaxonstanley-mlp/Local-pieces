@@ -137,10 +137,12 @@
   function finish(skipped) {
     if (!run) return;
     mark(run.part);
+    const askLesson = run.part === 'menu';
     if (skipped && run.part === 'menu') { mark('game'); mark('puzzle'); }    // skipping the first tour skips the rest too
     run = null;
     if (ui) { ui.root.classList.remove('on'); }
     document.body.classList.remove('tut-open');
+    if (LP.lesson && LP.lesson.ask && askLesson) setTimeout(() => LP.lesson.ask(), 450);   // the app tour is over: ask if this is a first game of chess
   }
 
   function start(part) {

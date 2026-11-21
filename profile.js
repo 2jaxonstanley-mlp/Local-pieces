@@ -12,7 +12,7 @@
   const SETTINGS_KEY = 'localPieces.settings';
   const START = 800, FLOOR = 100;
   const START_OF = { basic: 800, bullet: 1000, rapid: 1000 };   // Classic keeps the rating people already had
-  const BOT = { dumb: 10, easy: 150, medium: 600, hard: 1100, godly: 1800, insane: 2200, brilliant: 3000, patricia: 3200, stockfish: 3200 };
+  const BOT = { dumb: 10, easy: 150, medium: 600, hard: 1100, godly: 1800, insane: 2200, brilliant: 3000, patricia: 3200, stockfish: 3300, stockfishfull: 3500, copycat: 2500 };
   const MODES = { basic: 'Classic', bullet: 'Bullet', rapid: 'Rapid' };
   const blank = () => ({ w: 0, l: 0, d: 0 });
   const DEFAULT_SETTINGS = { hints: true, ratings: true, autoFlip: true };
@@ -149,11 +149,12 @@
         '<input type="checkbox" id="' + id + '" class="set-check"' + (on ? ' checked' : '') + '>' +
       '</label>';
     LP.openSheet('<h2>Settings<span class="sub">Defaults for new games. Change them any time.</span></h2>' +
-      '<div class="set-list">' +
+      '<input type="search" id="set-q" class="text-in set-search" placeholder="Search settings" autocomplete="off">' +
+      '<div class="set-list"><div class="set-gen">' +
         row('set-hints', 'Legal move hints', 'Show dots where the selected piece can move.', settings.hints) +
         row('set-ratings', 'Opening book labels', 'Mark book moves and show the opening name while you play. Full move ratings are in Analyze game.', settings.ratings) +
         row('set-flip', 'Auto-flip board', 'In two-player games, turn the board toward the player to move.', settings.autoFlip) +
-        (LP.prefs ? LP.prefs.rows() : '') +
+        '</div>' + (LP.prefs ? LP.prefs.rows() : '') +
       '</div>' +
       '<p class="note">These apply automatically when you start a game — no more prompts each time.</p>' +
       '<div class="row"><button class="btn primary" id="set-ok" style="flex:1">Done</button></div>', true);
@@ -169,6 +170,7 @@
     $('#set-ok').onclick = () => { sync(); LP.closeSheet(); };
   }
 
+  LP.openSettings = () => { LP.closeSheet(); setTimeout(settingsSheet, 60); };
   $('#acct').addEventListener('click', sheet);
   const gear = $('#settings-btn');
   if (gear) gear.addEventListener('click', settingsSheet);

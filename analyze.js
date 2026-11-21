@@ -152,7 +152,7 @@
     const idxs = [];
     e.moves.forEach((m, i) => { if (want(i) && !an.plies[i]) idxs.push(i); });
     const job = { mode: e.mode, fen: e.fen || null, secrets: { w: e.secrets.w, b: e.secrets.b }, moves: e.moves, idxs, budget: 50000 };
-    const SF = LP.Stockfish;
+    const SF = LP.analysisEngine ? LP.analysisEngine() : LP.Stockfish;
     const useSf = !!(idxs.length && SF && job.mode === 'basic' && await SF.load());   // Stockfish double-checks every move (Classic-style games only)
     if (useSf) { job.budget = 20000; pScale = [0, 55]; }
     progress(1, 'Starting the engine');
@@ -170,6 +170,8 @@
         let note;
         try { note = chessNote(e, g, m, p, i % 2 === 0 ? 'w' : 'b'); } catch (x) { note = { k: 'info', t: '', sq: [] }; }
         an.plies[i] = { r: p.r, b: p.b, bs: p.bs, ps: p.ps, d: p.d, n: note };
+        if (p.top && p.top.length) an.plies[i].top = p.top.slice(0, 3);
+        if (p.bl && p.bl.length) an.plies[i].pv = p.bl.slice(0, 5); else if (p.ref && p.ref.length) an.plies[i].pv = p.ref.slice(0, 5);
       }
       g.makeMove(m);
     }
@@ -214,7 +216,7 @@
    * move and the lines shown in the lesson. The built-in engine's answer is kept for anything Stockfish cannot judge.
    */
   async function sfRefine(job, res, my) {
-    const SF = LP.Stockfish;
+    const SF = LP.analysisEngine ? LP.analysisEngine() : LP.Stockfish;
     const idxs = job.idxs.filter((i) => res[i] && !SF_SKIP[res[i].r]);
     if (!idxs.length) return res;
     const g = AC.startPosition(job);
@@ -227,7 +229,7 @@
     const need = new Set();
     idxs.forEach((i) => { need.add(i); need.add(i + 1); });
     const list = Array.from(need).sort((a, b) => a - b);
-    const ms1 = Math.max(120, Math.min(350, 18000 / list.length));
+    const sc = LP.depthScale ? LP.depthScale() : 1, ms1 = Math.round(Math.max(120, Math.min(350, 18000 / list.length)) * sc);
     const A = {};
     for (let n = 0; n < list.length; n++) {
       if (my !== token) return null;
@@ -244,7 +246,7 @@
       return { bs, ps: Math.min(ps, bs) };
     };
     const flagged = idxs.filter((i) => { const v = evalOf(i); return v && (AC.VERIFY[res[i].r] || wpLoss(v.bs, v.ps) >= 0.03); });
-    const ms2 = Math.max(450, Math.min(1400, 12000 / Math.max(1, flagged.length * 2)));
+    const ms2 = Math.round(Math.max(450, Math.min(1400, 12000 / Math.max(1, flagged.length * 2))) * sc);
     for (let n = 0; n < flagged.length; n++) {
       if (my !== token) return null;
       progress(79 + n / flagged.length * 17, 'Stockfish: looking closer at move ' + (Math.floor(flagged[n] / 2) + 1), true);
@@ -581,6 +583,76 @@
     d.textContent = n ? plural(n, 'saved game') + ' · ' + a + ' analysed' : 'Review your games and learn from every mistake.';
   }
 
+
+  /* ------------------------------------------------------------------ import: paste a PGN or a list of moves */
+  const normSan = (t) => String(t).replace(/[+#!?]/g, '').replace(/=/g, '').replace(/^0-0-0$/, 'O-O-O').replace(/^0-0$/, 'O-O');
+  const UCI = /^[a-h][1-8][a-h][1-8][qrbn]?$/i;
+  /** Reads a PGN (with or without headers), a plain list of SAN moves ("1. e4 e5 2. Nf3") or a list of UCI moves ("e2e4 e7e5"). */
+  function parseGame(text) {
+    text = String(text || '').trim();
+    if (!text) return { err: 'Paste a PGN or a list of moves first.' };
+    const tag = (k) => { const m = new RegExp('\\[' + k + '\\s+"([^"]*)"\\s*\\]', 'i').exec(text); return m ? m[1].trim() : ''; };
+    const g = new window.Chess();
+    g.reset();
+    const fen = tag('FEN');
+    if (fen) { const er = g.loadFen(fen); if (er) return { err: 'The FEN in this PGN is not valid. ' + er }; }
+    let body = text.replace(/\[[^\]]*\]/g, ' ').replace(/\{[^}]*\}/g, ' ').replace(/;[^\n]*/g, ' ');
+    let prev;
+    do { prev = body; body = body.replace(/\([^()]*\)/g, ' '); } while (body !== prev);   // side variations
+    let endTok = '';
+    body = body.replace(/\$\d+/g, ' ').replace(/(^|\s)(1-0|0-1|1\/2-1\/2|\*)(?=\s|$)/g, (a, b, r) => { endTok = r; return ' '; }).replace(/\d+\s*\.+/g, ' ');
+    const toks = body.split(/\s+/).filter(Boolean);
+    if (!toks.length) return { err: 'No moves found.' };
+    if (toks.length > 600) return { err: 'That is too long (over 600 moves).' };
+    const moves = [], sans = [];
+    for (let i = 0; i < toks.length; i++) {
+      const t = toks[i], legal = g.legalMoves();
+      let m = null;
+      if (UCI.test(t)) {
+        const q = t.toLowerCase(), sq = (x) => (x.charCodeAt(0) - 97) + 16 * (+x[1] - 1), pr = { q: 5, r: 4, b: 3, n: 2 }[q[4]] || 0;
+        m = legal.find((x) => x.from === sq(q.slice(0, 2)) && x.to === sq(q.slice(2, 4)) && (x.promo || 0) === pr);
+      }
+      if (!m) { const want = normSan(t); m = legal.find((x) => normSan(g.moveToSan(x)) === want); }
+      if (!m) return { err: 'Move ' + (i + 1) + ' ("' + t + '") is not legal here. Check the moves and try again.' };
+      sans.push(g.moveToSan(m));
+      moves.push({ from: m.from, to: m.to, flags: m.flags, promo: m.promo || 0, q: m.q || 0 });
+      g.makeMove(m);
+    }
+    const res = tag('Result') || endTok;
+    return { moves, sans, fen: fen || null, white: tag('White'), black: tag('Black'), res, over: !g.hasLegalMove() };
+  }
+  function importSheet() {
+    let side = 'x';
+    LP.openSheet(`<h2>Import a game<span class="sub">Paste a PGN, or just the moves (e4 e5 Nf3 ... or e2e4 e7e5 ...).</span></h2>
+      <textarea id="im-txt" class="text-in" rows="7" placeholder="1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 ..." autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
+      <button class="btn wide" id="im-clip">Paste from clipboard</button>
+      <div class="lv-style"><span>Which side were you?</span><div class="chips"><button type="button" class="chip on" data-s="x">Not me</button><button type="button" class="chip" data-s="w">White</button><button type="button" class="chip" data-s="b">Black</button></div></div>
+      <p class="note" id="im-err" style="color:#ff8a8a"></p>
+      <div class="row"><button class="btn" id="im-no">Cancel</button><button class="btn primary" id="im-ok">Import</button></div>`, true);
+    sheetQ('[data-s]').forEach((b) => { b.onclick = () => { side = b.dataset.s; sheetQ('[data-s]').forEach((x) => x.classList.toggle('on', x === b)); }; });
+    $('#im-no').onclick = LP.closeSheet;
+    $('#im-clip').onclick = () => {
+      if (navigator.clipboard && navigator.clipboard.readText) navigator.clipboard.readText().then((t) => { $('#im-txt').value = t.trim(); }, () => { $('#im-err').textContent = 'Your browser blocked the clipboard. Paste into the box instead.'; });
+      else $('#im-err').textContent = 'Paste into the box instead.';
+    };
+    $('#im-ok').onclick = () => {
+      const r = parseGame($('#im-txt').value);
+      if (r.err) { $('#im-err').textContent = r.err; return; }
+      const win = r.res === '1-0' ? 'w' : r.res === '0-1' ? 'b' : null;
+      const e = {
+        v: 1, id: 'imp' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), date: Date.now(), mode: 'basic', tas: false, level: null,
+        names: { w: r.white && r.white !== '?' ? r.white : 'White', b: r.black && r.black !== '?' ? r.black : 'Black' },
+        secrets: { w: -1, b: -1 }, moves: r.moves, ratings: null, sans: r.sans,
+        result: win ? (win === 'w' ? 'White wins' : 'Black wins') + ' · ' + r.res : r.res === '1/2-1/2' ? 'Draw · 1/2-1/2' : r.over ? 'Game over' : 'Imported game',
+        mode2: 'basic', human: side === 'x' ? null : side, resigned: null, winner: win, clock: null, fen: r.fen, imported: true,
+      };
+      LP.store.set([e].concat(all()).slice(0, 40));
+      LP.closeSheet(); renderLibrary(); refreshMenu();
+      setTimeout(() => begin(e.id), 60);
+    };
+  }
+  const sheetQ = (sel) => Array.from(document.querySelectorAll('#sheet ' + sel));
+
   function showLibrary() { renderLibrary(); LP.showPage('analyze'); }
 
   /* ------------------------------------------------------------------ start an analysis */
@@ -825,6 +897,16 @@
     }
     return 0.5;
   }
+  /** White's score in pawns-times-100 after n moves (null when nothing nearby was analysed). */
+  function whiteCpAt(n) {
+    const an = R.an.plies, w = (i) => (i % 2 === 0 ? 1 : -1);
+    for (let d = 0; d <= R.total; d++) {
+      const f = n + d, b = n - 1 - d;
+      if (f <= R.total && an[f] && an[f].bs != null) return an[f].bs * w(f);
+      if (b >= 0 && an[b] && an[b].ps != null) return an[b].ps * w(b);
+    }
+    return null;
+  }
   /** Forced mate in the position after n moves, as moves (+ White mates, - Black mates), or 0. Only read where the score is exact. */
   function whiteMate(n) {
     const an = R.an.plies, mv = (i) => (i % 2 === 0 ? 'w' : 'b');
@@ -901,6 +983,20 @@
       box.innerHTML = `<div class="rv-g-h"><span>Winning chances</span><small>tap to jump · white on top</small></div>
         <div class="rv-g-plot rv-g-chess"><svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon points="${area}" class="rv-g-area"/><line x1="0" x2="100" y1="50" y2="50" class="rv-g-zero"/><polyline points="${line}" class="rv-g-line"/></svg><i class="rv-g-cur"></i>${dots}</div>`;
       const plot = box.querySelector('.rv-g-plot');
+      const tip = document.createElement('div');
+      tip.className = 'rv-g-tip hidden';
+      plot.appendChild(tip);
+      plot.onmousemove = (ev) => {
+        const r = plot.getBoundingClientRect(), k = Math.round(Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)) * n);
+        const m = whiteMate(k), wp = whiteWp(k);
+        const cp = whiteCpAt(k);
+        const val = m ? (m > 0 ? 'M' + m : '−M' + (-m)) : cp == null ? '' : evTxt(cp);
+        const san = k && R.entry.sans && R.entry.sans[k - 1] ? ' ' + LP.fmt(R.entry.sans[k - 1]) : '';
+        tip.innerHTML = (k ? '<b>' + (Math.floor((k - 1) / 2) + 1) + (k % 2 ? '.' : '…') + esc(san) + '</b>' : '<b>Start</b>') + '<span>' + (val ? esc(val) + ' · ' : '') + Math.round(wp * 100) + '% White</span>';
+        tip.style.left = Math.max(14, Math.min(86, X(k))) + '%';
+        tip.classList.remove('hidden');
+      };
+      plot.onmouseleave = () => tip.classList.add('hidden');
       plot.onclick = (ev) => { const r = plot.getBoundingClientRect(); goPly(Math.round(Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)) * n), true); };
       markGraph();
       return;
@@ -1000,6 +1096,8 @@
     });
     box.classList.toggle('hidden', !(o.pills && o.pills.length));
     const r = o.rate;
+    b.classList.toggle('rv-q', !!r);
+    if (r) b.style.setProperty('--rq', ratingColor(r));
     $('#rv-rate').innerHTML = r ? `<span class="rv-rname" style="color:${ratingColor(r)}">${esc(r.label)}</span><span class="rv-ric${r.hasImg ? ' img' : ''}" style="background:${r.hasImg ? 'none' : r.color}">${MR.iconHtml(r)}</span>` : '';
     updateMain();
   }
@@ -1052,7 +1150,9 @@
     if (i < 0) { say({ cap: 'Start of the game', text: 'The starting position. Use the arrows to look through the game.' }); return; }
     const p = R.an.plies[i], r = ratingAt(i);
     const san = R.entry.sans && R.entry.sans[i] ? ' · ' + R.entry.sans[i] : '';
-    say({ cap: capFor(i) + san, text: p ? noteText(i, true) : 'This move was not part of the analysis.', rate: r || undefined, ply: i });
+    const hx = R.kind === 'chess' && p ? chessBubble(i, noteText(i, true)) : null;
+    if (hx) { say({ cap: capFor(i) + san, html: hx, rate: r || undefined, ply: i }); bindAlts(i); }
+    else say({ cap: capFor(i) + san, text: p ? noteText(i, true) : 'This move was not part of the analysis.', rate: r || undefined, ply: i });
     if (R.kind === 'chess' && p && BADR[p.r]) {
       const ar = [];
       if (p.b) ar.push({ a: toIdx(p.b.f), b: toIdx(p.b.t), c: 'g' });
@@ -1113,12 +1213,92 @@
   function bindAlts(i) {
     $('#rv-bubble').querySelectorAll('.rv-alt').forEach((b) => {
       b.onclick = () => {
-        const f = +b.dataset.f, t = +b.dataset.t, ev = R.entry.events[i];
+        const f = +b.dataset.f, t = +b.dataset.t;
+        const ev = R.kind === 'chess' ? { f: toIdx(R.entry.moves[i].from), t: toIdx(R.entry.moves[i].to) } : R.entry.events[i];
         const played = f === ev.f && t === ev.t;
-        R.arrows = (R.arrows || []).filter((a) => a.c === 'r').concat(played ? [] : [{ a: f, b: t, c: 'g' }]);
+        const on = (R.arrows || []).some((a) => a.c === 'g' && a.a === f && a.b === t);
+        R.arrows = (R.arrows || []).filter((a) => a.c === 'r').concat(played || on ? [] : [{ a: f, b: t, c: 'g' }]);
         render();
       };
     });
+  }
+
+  /* ---- chess: the numbers behind the note (played / best / lost), the top moves and the best line */
+  /** A score for the side that moved, in pawns: +0.6, −1.2, 0.0. Mates show as M3 / −M2. */
+  function evTxt(s) {
+    if (Math.abs(s) >= MATE - 200) {
+      let pl = MATE - Math.abs(s);
+      if ((pl % 2 === 1) !== (s > 0)) pl++;   // a score read from the position after the move is one ply short
+      return (s < 0 ? '−' : '') + 'M' + Math.max(1, Math.ceil(pl / 2));
+    }
+    const r = Math.round(s / 10) / 10;
+    return r > 0 ? '+' + r.toFixed(1) : r < 0 ? '−' + (-r).toFixed(1) : '0.0';
+  }
+  const lossCol = (l) => (l <= 0.02 ? '#6fd08c' : l <= 0.05 ? '#9ad65a' : l <= 0.1 ? '#f7c631' : l <= 0.2 ? '#e58f2a' : '#ca3431');
+  const accCol = (a) => (a >= 90 ? '#6fd08c' : a >= 75 ? '#9ad65a' : a >= 60 ? '#f7c631' : a >= 40 ? '#e58f2a' : '#ca3431');
+  /** Run fn with the review board set back to the position BEFORE move i (and put it forward again after). */
+  function withBefore(i, fn) {
+    if (!R || R.kind !== 'chess' || R.ply <= i) return null;
+    const undone = [];
+    let out = null;
+    try {
+      while (R.G.history.length > i) { undone.push(R.G.history[R.G.history.length - 1].move); R.G.unmakeMove(); }
+      out = fn(R.G);
+    } catch (x) { out = null; }
+    while (undone.length) R.G.makeMove(undone.pop());
+    return out;
+  }
+  function chessExtras(i, p) {
+    const none = { head: '', foot: '' };
+    if (!R || R.kind !== 'chess' || !p || p.bs == null || p.ps == null || p.r === 'book' || p.r === 'forced') return none;
+    const loss = wpLoss(p.bs, p.ps), acc = Math.round(accOf(loss)), lc = lossCol(loss);
+    const lost = Math.max(0, p.bs - p.ps);
+    const lostTxt = lost < 5 ? '0.0' : lost >= 1000 ? '−10+' : '−' + (lost / 100).toFixed(1);
+    const chip = (label, val, col) => `<span class="rv-pt" style="--c:${col}"><small>${label}</small><b>${val}</b></span>`;
+    const w0 = MR.wp(p.bs), w1 = Math.min(MR.wp(p.ps), w0);
+    const head = '<div class="rv-pts sm" aria-label="Move numbers, from the side that moved">' + chip('Played', evTxt(p.ps), '#8fd3e8') + chip('Best', evTxt(p.bs), '#6fd08c') + chip('Lost', lostTxt, lc) + chip('Accuracy', acc + '%', accCol(acc)) + '</div>'
+      + `<div class="rv-swing" style="--c:${lc}" title="Winning chances for the side that moved: ${Math.round(w0 * 100)}% at best, ${Math.round(w1 * 100)}% after this move"><i style="left:${(w1 * 100).toFixed(1)}%;width:${((w0 - w1) * 100).toFixed(1)}%"></i><b style="left:${(w1 * 100).toFixed(1)}%"></b></div>`;
+    const mv = R.entry.moves[i];
+    const foot = withBefore(i, (g) => {
+      const legal = g.legalMoves();
+      const played = legal.find((x) => same(x, mv)) || mv;
+      const rows = [];
+      (p.top && p.top.length ? p.top.slice(0, 3) : p.b ? [[p.b, p.bs]] : []).forEach(([k, sc]) => { const m = legal.find((x) => sameKey(x, k)); if (m) rows.push({ m, s: sc }); });
+      if (!rows.some((x) => same(x.m, played))) rows.push({ m: played, s: p.ps });
+      let h = '';
+      if (rows.length > 1 || !same(rows[0].m, played)) {
+        h += '<div class="rv-alts" aria-label="Top moves"><div class="rv-alts-h">Top moves <small>from the side that moved</small></div>';
+        rows.forEach((x, k) => {
+          const pl = same(x.m, played);
+          h += `<button class="rv-alt${pl ? ' played' : ''}" data-f="${toIdx(x.m.from)}" data-t="${toIdx(x.m.to)}"><span class="rv-alt-m">${esc(LP.fmt(g.moveToSan(x.m)))}</span><span class="rv-alt-s">${evTxt(x.s)}</span><span class="rv-alt-t">${[k === 0 ? 'best' : '', pl ? 'played' : ''].filter(Boolean).join(' · ')}</span></button>`;
+        });
+        h += '</div>';
+      }
+      const bestPlayed = p.b && sameKey(played, p.b);
+      const pv = p.pv && p.pv.length >= 2 && (!bestPlayed ? p.pv[0][0] === (p.b && p.b.f) && p.pv[0][1] === (p.b && p.b.t) : true) ? p.pv : null;
+      if (pv) {
+        const c = MR.clone(g), parts = [];
+        let no = Math.floor(i / 2) + 1, white = g.turn === WHITE;
+        for (let k = 0; k < pv.length && k < 4; k++) {
+          const m = c.legalMoves().find((x) => x.from === pv[k][0] && x.to === pv[k][1] && (x.promo || 0) === (pv[k][2] || 0) && (x.q || 0) === (pv[k][3] || 0));
+          if (!m) break;
+          parts.push((white ? no + '. ' : k === 0 ? no + '… ' : '') + LP.fmt(c.moveToSan(m)));
+          c.makeMove(m);
+          if (!white) no++;
+          white = !white;
+        }
+        if (parts.length > 1) h += `<div class="rv-pvline"><b>Best line</b> ${esc(parts.join(' '))} …</div>`;
+      }
+      return h;
+    });
+    return { head, foot: foot || '' };
+  }
+  /** The bubble html for a reviewed chess move: numbers, then the note, then the alternatives (null when there is nothing to add). */
+  function chessBubble(i, text) {
+    const p = R && R.an && R.an.plies[i];
+    if (!p) return null;
+    const x = chessExtras(i, p);
+    return x.head || x.foot ? `${x.head}<p class="rv-text">${esc(text)}</p>${x.foot}` : null;
   }
 
   async function addSide(c) {
@@ -1289,7 +1469,11 @@
     R.phase = 'passed';
     R.arrows = [];
     if (R.kind === 'rush' && p && p.pg) { say({ cap: step + ' · ' + capFor(i), html: `<p class="rv-text">${esc(text)}</p>${rushExtras(i, p)}`, rate: ratingAt(i), ply: i }); bindAlts(i); }
-    else say({ cap: step + ' · ' + capFor(i), text, rate: ratingAt(i), ply: i });
+    else {
+      const hx = R.kind === 'chess' ? chessBubble(i, text) : null;
+      if (hx) { say({ cap: step + ' · ' + capFor(i), html: hx, rate: ratingAt(i), ply: i }); bindAlts(i); }
+      else say({ cap: step + ' · ' + capFor(i), text, rate: ratingAt(i), ply: i });
+    }
     render();
   }
 
@@ -1700,7 +1884,7 @@
         <span class="pz-head"><span class="mode-title">Analyze</span></span>
         <span class="header-spacer"></span>
       </header>
-      <div class="lb-wrap an-wrap"><div class="an-label"><span class="mgrp-t">Your games</span><span class="mgrp-s">Open one for a lesson and a retry</span></div><div id="an-list"></div></div>`;
+      <div class="lb-wrap an-wrap"><div class="an-label"><span class="mgrp-t">Your games</span><span class="mgrp-s">Open one for a lesson and a retry</span></div><button class="btn wide an-import" id="an-imp">Import a game (PGN or moves)</button><div id="an-list"></div></div>`;
     const rv = document.createElement('section');
     rv.id = 'review'; rv.className = 'page';
     rv.innerHTML = `<div class="rv-wrap">
@@ -1734,6 +1918,7 @@
     app.insertBefore(lib, anchor);
     app.insertBefore(rv, anchor);
     $('#an-back').onclick = () => LP.showPage('menu');
+    $('#an-imp').onclick = importSheet;
     $('#rv-back').onclick = () => leave();
     // on a computer the mouse wheel scrolls the move bar sideways
     $('#rv-moves').addEventListener('wheel', (ev) => {
