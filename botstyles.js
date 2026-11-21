@@ -6,7 +6,7 @@
  *   Mr. Brilliant about 3000  Hunts for brilliant moves. Asks the engine for its top four lines and picks the one that gives up material
  *                             for the attack (a classic sacrifice, where the material drops for a moment) or is a sharp tactical shot.
  *
- * Both now also: use the Full engine when it is already loaded (the Lite one otherwise), play their own sharp opening lines, play the plain best
+ * Both now also: play their own sharp opening lines, play the plain best
  * move when they are winning big (no gimmicks), go wilder when they are losing, and avoid quiet trades when the game is level.
  *
  * LP.BotStyle.pick(game, 'patricia' | 'brilliant', ms, { repeats(move) -> bool }) -> Promise<legal move | null>
@@ -106,8 +106,7 @@
     const legal = next.map((u) => LP.Stockfish.legalOf(g, u)).filter(Boolean);
     return legal.length ? legal[Math.floor(Math.random() * legal.length)] : null;
   }
-  /** Which engine to use: the Full one if it is already loaded, otherwise Lite. */
-  const engine = () => (LP.StockfishFull && LP.StockfishFull.available() ? LP.StockfishFull : LP.Stockfish);
+  const engine = () => LP.Stockfish;
   const total = (g) => mat(g, WHITE) + mat(g, BLACK);
   /** Is this a real brilliant move? (checked with the game's own move rating; only done for one or two candidates, it takes a moment) */
   function isBrilliant(g, m) {

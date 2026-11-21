@@ -9,6 +9,10 @@
   const LP = (window.LP = window.LP || {});
   LP.UPDATES = {
     log: [
+    { id: 'u19', date: '2026-11-21', title: 'One Stockfish', items: [
+      'The big 99 MB Stockfish is gone. The Stockfish bot and Analyze now both use the small, fast engine, so there is nothing large to download',
+      'The Analysis engine switch was removed from Settings. Thinking time is still there',
+    ] },
     { id: 'u18', date: '2026-11-21', title: 'Numbers, top moves and a quality strip in Analyze', items: [
       'New: the note under the board now has chips for Played, Best, Lost and Accuracy, in pawns from the side that moved (mates show as M3 or −M2)',
       'New: a small bar under the chips shows how much of your winning chances the move gave away',
@@ -33,7 +37,7 @@
       'New board colour presets (Classic, Night, Mint, Sand, Rose, Ice) with a live preview strip',
       'New Move display options: hide the last move highlight, hide coordinates, and write moves as Nf3 or with piece symbols',
       'New Moving pieces option: tap and drag, or tap only. New Always promote to a queen switch',
-      'New Engine and analysis options: choose Stockfish Lite or full Stockfish for Analyze and the Sandbox hint, and set Fast, Normal or Deep thinking time',
+      'New Analysis option: set Fast, Normal or Deep thinking time for Analyze',
       'New Accessibility options: colour-blind friendly highlights, high contrast and larger text',
       'New Vibration option for moves, captures and check on phones',
       'New Help and data: replay the chess lesson, open the update log, back up your data to a file and restore it on another device, and reset all settings',
@@ -41,7 +45,7 @@
       'After an update you get a small What\'s new card the first time you open the game (turn it off in Settings)',
     ] },
     { id: 'u15', date: '2026-11-21', title: 'Stockfish, CopyCat, smarter Patricia and Brilliant, game import and a first-time lesson', img: 'copycat-pfp.png', try: [{ t: 'Import a game', go: 'analyze' }, { t: 'Play the lesson', go: 'lesson' }], items: [
-      'New Stockfish Lite and Stockfish bots. Lite is the small, fast engine. The full Stockfish uses the big network (a one-time 99 MB download, then it is kept by your browser). If the big file is missing the bot falls back to Insane',
+      'New Stockfish bot: the real Stockfish engine. If its file is missing the bot falls back to Insane',
       'New CopyCat bot (? Elo): it mirrors your moves, the same piece going to the mirrored square (e2-e4 is answered with e7-e5). As White it opens 1.e3 and the game answers 1...e5 for the other side, then it copies from there',
       'CopyCat stops copying for good when no piece can make the mirror move, or when you are 6 points ahead in material, and then plays like Stockfish. It cannot play itself in 0 players',
       'Patricia and Mr. Brilliant are smarter: their own opening lines (King\'s Gambit, Danish, Evans, Smith-Morra, Fried Liver ideas), they just finish a won game, gamble more when behind, and they use the full Stockfish when it is loaded',

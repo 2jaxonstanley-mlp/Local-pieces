@@ -104,7 +104,7 @@
   const ms = $('#moves-scroll');
   if (ms) new MutationObserver(() => { if (P.notation === 'fig') figurine(); }).observe(ms, { childList: true, subtree: true });
   /** The engine used by Analyze and the Sandbox hint, and how long it thinks. */
-  LP.analysisEngine = () => (P.engine === 'full' && LP.StockfishFull && !LP.StockfishFull.failed() ? LP.StockfishFull : LP.Stockfish);
+  LP.analysisEngine = () => LP.Stockfish;
   LP.depthScale = () => ({ fast: 0.5, normal: 1, deep: 2.2 })[P.depth] || 1;
   const buzz = (n) => { if (P.haptic && navigator.vibrate) { try { navigator.vibrate(({ move: 8, capture: 18, castle: 12, check: [20, 40, 20], win: [30, 50, 30, 50, 60], lose: 80, goal: 25 })[n] || 0); } catch (e) { /* not supported */ } } };
 
@@ -118,7 +118,7 @@
     board: { t: 'Board colours', keys: ['light', 'dark'], open: true },
     games: { t: 'Games', keys: ['warn', 'spectate', 'premove', 'preGhost', 'annot', 'quick', 'shortcuts', 'input', 'autoq', 'newsPopup'], open: true },
     moves: { t: 'Move display', keys: ['nolast', 'nocoords', 'notation'], open: false },
-    engine: { t: 'Engine and analysis', keys: ['engine', 'depth'], open: false },
+    engine: { t: 'Analysis', keys: ['depth'], open: false },
     access: { t: 'Accessibility', keys: ['cb', 'hc', 'big'], open: false },
     data: { t: 'Help and data', keys: [], open: false },
   };
@@ -149,7 +149,6 @@
       row('pf-nocoords', 'Hide board coordinates', 'Remove the letters and numbers on the edge of the board.', P.nocoords) +
       seg('notation', 'Notation', 'How moves are written in the move list.', [['san', 'Nf3'], ['fig', '♘f3']])) +
     grp('engine',
-      seg('engine', 'Analysis engine', 'Used by Analyze and the Sandbox hint. Full is stronger, but needs the one-time 99 MB download.', [['lite', 'Stockfish Lite'], ['full', 'Stockfish']]) +
       seg('depth', 'Thinking time', 'Longer makes Analyze slower and its ratings more careful.', [['fast', 'Fast'], ['normal', 'Normal'], ['deep', 'Deep']])) +
     grp('access',
       row('pf-cb', 'Colour-blind friendly highlights', 'Blue and orange instead of green and red for highlights and check.', P.cb) +
