@@ -54,7 +54,7 @@
 
   function stopWait() { if (wait) { clearTimeout(wait.timer); wait.stop = true; wait = null; } }
   function stopRun() {
-    const r = run; run = null;
+    const r = run; run = null; LP.liveExtra = null;
     if (r) { r.stop = true; clearInterval(r.ticker); }
     stopWait();
     Puz.rushStop();
@@ -77,6 +77,10 @@
     const key = [r.mode, r.score, r.lives, r.opp && r.opp.s, r.opp && r.opp.l, r.oppName, r.cur && r.cur.rt, r.waiting, r.hideType].join('|');
     if (r.barKey === key) return;
     r.barKey = key;
+    try {   // what spectators see beside the board (puzzles.js sends it with the board)
+      const t = r.timed || r.mode === 'battle' ? (($('#pr-time') || {}).textContent || '') : '';
+      LP.liveExtra = { label: r.mode === 'battle' ? 'Puzzle Battle' : 'Puzzle Rush', hud: 'Score ' + r.score + ' \u00b7 Lives ' + r.lives + (t ? ' \u00b7 ' + t : ''), opp: r.mode === 'battle' && r.opp ? (r.oppName || 'Opponent') + ': ' + r.opp.s + ' (lives ' + r.opp.l + ')' : '' };
+    } catch (e) { /* the viewer text is optional */ }
     const me = `<div class="pr-who">${av(LP.profile && LP.profile.pfp && LP.profile.pfp(), myName())}<b class="pr-score">${r.score}</b></div>`;
     const diff = `<div class="pr-diff"><small>Difficulty:</small><b>${r.cur && !r.waiting ? r.cur.rt : '–'}</b>${r.hideType || !r.cur || r.waiting ? '' : `<span>${esc(typeLabel(r.cur))}</span>`}</div>`;
     if (r.mode === 'solo') {

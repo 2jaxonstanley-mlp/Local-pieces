@@ -393,7 +393,23 @@
     if (snailW) score += snailW * snailTerm(g, wk, bk);
     if (g.mode === 'gamble') score += gambleTerm(g);
     if (g.mode === 'royale') score += ELX * (g.el[WHITE] - g.el[BLACK]);
+    if (g.vm) score += variantTerm(g, wk, bk);
     return g.turn === WHITE ? score : -score;
+  }
+
+  /** Custom gamemodes: what the normal evaluation does not know, in centipawns from White's point of view. */
+  function variantTerm(g, wk, bk) {
+    const m = g.mode;
+    if (m === 'koth') {   // the centre is the goal: a king close to it is worth a lot, and an enemy king close to it is a threat
+      const d = (k) => (k < 0 ? 6 : Math.max(Math.abs((k & 15) - 3.5), Math.abs((k >> 4) - 3.5)) - 0.5);
+      return 22 * (d(bk) - d(wk));
+    }
+    if (m === 'racing') return 40 * ((wk < 0 ? 0 : wk >> 4) - (bk < 0 ? 0 : bk >> 4) + 0.5 * 0) + 0;   // every rank the king climbs counts
+    if (m === '3check') return 55 * (g.chk[WHITE] - g.chk[BLACK]) * (1 + 0.5 * Math.max(g.chk[WHITE], g.chk[BLACK]));
+    if (m === 'atomic') {   // kings next to each other cannot be attacked, and a king close to the enemy pieces is in danger of an explosion
+      if (wk >= 0 && bk >= 0 && Math.abs((wk & 15) - (bk & 15)) <= 1 && Math.abs((wk >> 4) - (bk >> 4)) <= 1) return 0;
+    }
+    return 0;
   }
 
   /**
@@ -740,12 +756,15 @@
     }
     if (g.mode === 'snail') k += 's' + g.snW + ',' + g.snB + ',' + ((g.fullmove - 1) % 3);   // the snails are part of the position
     if (g.mode === 'royale') k += 'e' + g.el[WHITE] + ',' + g.el[BLACK];
+    if (g.mode === '3check') k += 'c' + g.chk[WHITE] + g.chk[BLACK];
     return k + g.turn + g.castling + g.ep;
   }
 
   function cloneForSearch(g, hideColor) {
     const c = new Chess();
     c.mode = g.mode;
+    c.vp = g.vp; c.vm = g.vm; c.vWhy = ''; c.chk = { [WHITE]: g.chk[WHITE], [BLACK]: g.chk[BLACK] };   // custom gamemodes: settings, checks given, where the king and rooks start
+    c.kf = g.kf; c.rfK = g.rfK; c.rfQ = g.rfQ;
     c.snW = g.snW; c.snB = g.snB; c.snailKilled = g.snailKilled; c.pW = g.pW; c.kingTaken = g.kingTaken;
     c.el = { [WHITE]: g.el[WHITE], [BLACK]: g.el[BLACK] };
     if (g.mode === 'royale') c.spawnCap = 4;
@@ -769,7 +788,7 @@
     const m = new Map();
     try {
       const r = new Chess();
-      r.mode = g.mode; r.reset();
+      r.mode = g.mode; r.vp = g.vp; r.reset();
       m.set(hashOf(r), 1);
       for (const h of g.history) { r.makeMove(h.move); const k = hashOf(r); m.set(k, (m.get(k) || 0) + 1); }
     } catch (e) { m.clear(); }
@@ -903,7 +922,7 @@
     const c = cloneForSearch(g, enemy);
     const rootMoves = c.legalMoves();
     const K = Math.min(cfg.multi, rootMoves.length);
-    if (g.mode === 'secret') ttDepth.fill(-1);
+    if (g.mode === 'secret' || g.vm) ttDepth.fill(-1);
     prepare(g, c, cfg);
     const t0 = now();
     deadline = t0 + cfg.time;
@@ -1094,7 +1113,7 @@
       const bm = bookMove(g);
       if (bm) { finish(bm); return; }   // finish applies polish for insane
     }
-    if (g.mode === 'secret') ttDepth.fill(-1);   // hidden-information searches differ from game to game
+    if (g.mode === 'secret' || g.vm) ttDepth.fill(-1);   // hidden-information searches differ from game to game
 
     // "Dumb" is trying to LOSE: it plays the move that leaves it worst off after the opponent's best reply, hangs pieces,
     // walks into mate when it can, and never takes a win or a draw when it can avoid it
@@ -1187,7 +1206,7 @@
       const c = cloneForSearch(g, 0);
       const root = c.legalMoves();
       if (!root.length) return { depth: 0, legal: 0, top: [], played: null };
-      if (g.mode === 'secret') ttDepth.fill(-1);
+      if (g.mode === 'secret' || g.vm) ttDepth.fill(-1);
       const cfg = { q: q || 4 };
       prepare(g, c, cfg);
       const t0 = now();

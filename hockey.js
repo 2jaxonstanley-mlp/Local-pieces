@@ -843,6 +843,16 @@
       if (now >= freezeUntil) { resetRound(); phase = 'play'; }
     }
     draw();
+    liveHk();
+  }
+  /* positions for people watching from the player list (live.js): a few times a second, the viewer glides between them */
+  function liveHk() {
+    const L = window.LP && window.LP.live, ap = document.querySelector('.page.active');
+    if (!L || !cfg || !S || !ap || ap.id !== 'hockey' || phase === 'menu' || phase === 'over') return;
+    L.push('hockey', 'Playing Air Hockey', () => {
+      const r = (n) => Math.round(n * 100) / 100;
+      return { q: S.q.map((q) => [r(q.x), r(q.y)]), p: [r(S.p.x), r(S.p.y)], xp: (S.xp || []).map((q) => [r(q.x), r(q.y)]), sc: score.slice(), nm: cfg.names ? cfg.names.slice(0, 2) : ['', ''], pc: cfg.piece, st: phase === 'goal' ? 'Goal!' : phase === 'paused' ? 'Paused' : '' };
+    }, 350);
   }
 
   /* ---- puck stuck on one side: after 5 seconds a 3 second countdown, then it is moved (still, in the middle) to the other side */
@@ -920,6 +930,7 @@
   }
 
   function finish(winner) {
+    if (window.LP && window.LP.live) window.LP.live.end('hockey');
     phase = 'over';
     const secs = Math.round((Date.now() - started) / 1000);
     if (LP.rewards && LP.rewards.event && cfg.players !== 0) {   // two computers playing each other earn nothing

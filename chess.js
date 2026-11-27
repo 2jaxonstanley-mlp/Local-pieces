@@ -18,6 +18,26 @@ const PIECE_CHARS = {
 
 const FILES = 'abcdefgh';
 
+/** Custom gamemodes (Online > Custom): Chess960, 3-Check, King of the Hill, Atomic, Horde, Racing Kings and a position of your own (Custom FEN). */
+const VARIANT_IDS = ['c960', '3check', 'koth', 'atomic', 'horde', 'racing', 'fen'];
+const HORDE_FEN = 'rnbqkbnr/pppppppp/8/1PP2PP1/PPPPPPPP/PPPPPPPP/PPPPPPPP/PPPPPPPP w kq - 0 1';
+const RACING_FEN = '8/8/8/8/8/8/krbnNBRK/qrbnNBRQ w - - 0 1';
+/** Chess960 start position number (0 to 959, 518 is the normal one) as the 8 back-rank pieces, a-file first. */
+function chess960Back(pos) {
+  const b = new Array(8).fill(0);
+  let n = ((pos % 960) + 960) % 960;
+  b[1 + 2 * (n % 4)] = BISHOP; n = Math.floor(n / 4);
+  b[2 * (n % 4)] = BISHOP; n = Math.floor(n / 4);
+  const free = () => b.map((v, i) => (v ? -1 : i)).filter((i) => i >= 0);
+  b[free()[n % 6]] = QUEEN; n = Math.floor(n / 6);
+  const KN = [[0, 1], [0, 2], [0, 3], [0, 4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]][n];
+  const f = free();
+  b[f[KN[0]]] = KNIGHT; b[f[KN[1]]] = KNIGHT;
+  const r = free();
+  b[r[0]] = ROOK; b[r[1]] = KING; b[r[2]] = ROOK;
+  return b;
+}
+
 /** Chess Royale: what spawning each kind of piece costs in elixir (kings cannot be spawned). */
 const SPAWN_COST = { [PAWN]: 1, [KNIGHT]: 3, [BISHOP]: 3, [ROOK]: 5, [QUEEN]: 9 };
 const SPAWN_TYPES = [PAWN, KNIGHT, BISHOP, ROOK, QUEEN];
@@ -57,6 +77,11 @@ class Chess {
     this.noKingCap = false;   // Foresight Chess bots: planning a move in a position where the opponent's king is in check must not 'capture' it
     this.spawnCap = 0;   // bots' private copies only: how many squares per piece to consider when spawning (0 = all)
     this.snailKilled = 0; // a snail reached a king: WHITE / BLACK = that side lost, WHITE|BLACK = both kings reached at once
+    this.vp = null;       // custom gamemode settings: { pos } (Chess960 start number), { fen } (Custom FEN)
+    this.vm = false;      // true while a custom gamemode is on (set by reset)
+    this.vWhy = '';       // why a custom gamemode ended, in words
+    this.chk = { [WHITE]: 0, [BLACK]: 0 };   // 3-Check: checks given so far
+    this.kf = 4; this.rfK = 7; this.rfQ = 0;   // the king's start file and the files of the king-side / queen-side rooks (they move in Chess960)
     this.reset();
   }
 
@@ -90,6 +115,51 @@ class Chess {
     }
     if (this.mode === 'snail') { this.snW = sq(3, 3); this.snB = sq(3, 4); }
     else { this.snW = -1; this.snB = -1; }
+    this._variantStart();
+  }
+
+  /** Set up the start position of a custom gamemode (nothing happens in the normal modes). */
+  _variantStart() {
+    this.vm = VARIANT_IDS.indexOf(this.mode) >= 0;
+    this.chk = { [WHITE]: 0, [BLACK]: 0 }; this.kf = 4; this.rfK = 7; this.rfQ = 0; this.vWhy = '';
+    if (!this.vm) return;
+    const m = this.mode, vp = this.vp || {};
+    if (m === 'c960') {
+      const back = chess960Back(Number.isInteger(vp.pos) ? vp.pos : 518);
+      for (let f = 0; f < 8; f++) { this.board[sq(f, 0)] = WHITE | back[f]; this.board[sq(f, 7)] = BLACK | back[f]; }
+      this.kf = back.indexOf(KING);
+      this.rfQ = back.indexOf(ROOK); this.rfK = back.lastIndexOf(ROOK);
+    } else if (m === 'horde') this.loadFen(HORDE_FEN);
+    else if (m === 'racing') this.loadFen(RACING_FEN);
+    else if (m === 'fen' && vp.fen) { this.loadFen(vp.fen); this.problems(); }
+  }
+
+  /** Has a custom gamemode been won (or drawn)? Returns '1-0', '0-1', '1/2-1/2' or null, and sets vWhy. */
+  vResult() {
+    const m = this.mode;
+    if (m === '3check') {
+      const n = (this.vp && this.vp.n) || 3, nm = n === 1 ? 'First check' : n === 2 ? 'Second check' : n === 3 ? 'Third check' : n + ' checks';
+      if (this.chk[WHITE] >= n) { this.vWhy = nm; return '1-0'; }
+      if (this.chk[BLACK] >= n) { this.vWhy = nm; return '0-1'; }
+    } else if (m === 'koth') {
+      for (const c of [WHITE, BLACK]) {
+        const k = this.kingSquare(c);
+        if (k === sq(3, 3) || k === sq(4, 3) || k === sq(3, 4) || k === sq(4, 4)) { this.vWhy = 'King reached the hill'; return c === WHITE ? '1-0' : '0-1'; }
+      }
+    } else if (m === 'atomic') {
+      if (this.kingSquare(WHITE) < 0) { this.vWhy = 'King exploded'; return '0-1'; }
+      if (this.kingSquare(BLACK) < 0) { this.vWhy = 'King exploded'; return '1-0'; }
+    } else if (m === 'horde') {
+      let any = false;
+      for (let s = 0; s < 128 && !any; s++) { if (s & 0x88) { s += 7; continue; } if (this.board[s] && (this.board[s] & COLOR_MASK) === WHITE) any = true; }
+      if (!any) { this.vWhy = 'Every white piece was captured'; return '0-1'; }
+    } else if (m === 'racing') {
+      const wk = this.kingSquare(WHITE), bk = this.kingSquare(BLACK);
+      const w8 = wk >= 0 && rankOf(wk) === 7, b8 = bk >= 0 && rankOf(bk) === 7;
+      if (b8) { this.vWhy = w8 ? 'Both kings reached the 8th rank' : 'King reached the 8th rank'; return w8 ? '1/2-1/2' : '0-1'; }
+      if (w8 && this.turn === WHITE) { this.vWhy = 'King reached the 8th rank'; return '1-0'; }   // Black had one move to follow and did not
+    }
+    return null;
   }
 
   /** Is a snail standing on this square? Snails are solid: nothing can land on them, pass through them or capture them. */
@@ -250,6 +320,19 @@ class Chess {
   /** Check. In Gamblite there is no check: the king can be left attacked, and capturing it wins. */
   inCheck(color) {
     if (this.mode === 'gamble' || this.mode === 'guess') return false;   // Gamblite and Guess Who have no check
+    if (this.vm) {
+      const m = this.mode;
+      if (m === 'racing') return this.kingAttacked(WHITE) || this.kingAttacked(BLACK);   // nobody may give or stand in check
+      if (m === 'atomic') {
+        const k = this.kingSquare(color), e = this.kingSquare(color === WHITE ? BLACK : WHITE);
+        if (k < 0) return true;     // your own king blew up: that can never be a legal move
+        if (e < 0) return false;    // you blew up theirs: you won, so you are not "in check"
+        if (Math.abs(fileOf(k) - fileOf(e)) <= 1 && Math.abs(rankOf(k) - rankOf(e)) <= 1) return false;   // touching kings cannot be taken (taking explodes both)
+        return this.kingAttacked(color);
+      }
+      const r = this.vResult();
+      if (r && r !== '1/2-1/2') return (r === '1-0' ? BLACK : WHITE) === color;   // the side that lost counts as mated, so a search sees the end
+    }
     return this.kingAttacked(color);
   }
 
@@ -303,7 +386,7 @@ class Chess {
           }
         } else {
           add(to);
-          if (rankOf(s) === startRank) {
+          if (rankOf(s) === startRank || (this.mode === 'horde' && col === WHITE && rankOf(s) === 0)) {   // Horde: pawns on the first rank may also double-step
             const to2 = s + dir * 2;
             if (!this.board[to2]) add(to2, 1); // double push flag (add() refuses a snail's square)
           }
@@ -332,7 +415,8 @@ class Chess {
       const fr = (q) => !this.board[q] && q !== this.snW && q !== this.snB;
       const safe = this.mode === 'gamble';   // no check in Gamblite, so castling may pass through attacked squares
       const att = (q, by) => !safe && this.attacked(q, by);
-      if (col === WHITE) {
+      if (this.mode === 'c960') this._gen960Castle(s, col, moves);
+      else if (col === WHITE) {
         if ((this.castling & 1) && fr(sq(5,0)) && fr(sq(6,0)) &&
             !att(sq(4,0), BLACK) && !att(sq(5,0), BLACK) && !att(sq(6,0), BLACK)) {
           moves.push({ from: s, to: sq(6,0), flags: 4, promo: 0 }); // O-O
@@ -370,6 +454,24 @@ class Chess {
       }
     }
     return moves;
+  }
+
+  /** Chess960 castling: written as the king taking its own rook (move.to = the rook's square, flags 4 = king side, 8 = queen side). The king and rook end on g/f or c/d. */
+  _gen960Castle(s, col, moves) {
+    const back = col === WHITE ? 0 : 7, enemy = col === WHITE ? BLACK : WHITE;
+    if (rankOf(s) !== back || fileOf(s) !== this.kf) return;
+    for (const ks of [true, false]) {
+      const bit = ks ? (col === WHITE ? 1 : 4) : (col === WHITE ? 2 : 8);
+      if (!(this.castling & bit)) continue;
+      const rsq = sq(ks ? this.rfK : this.rfQ, back);
+      if (this.board[rsq] !== (col | ROOK)) continue;
+      const kt = ks ? 6 : 2, rt = ks ? 5 : 3, rf = fileOf(rsq);
+      const lo = Math.min(this.kf, rf, kt, rt), hi = Math.max(this.kf, rf, kt, rt);
+      let ok = true;
+      for (let f = lo; f <= hi && ok; f++) { const q = sq(f, back); if (this.board[q] && q !== s && q !== rsq) ok = false; }
+      for (let f = Math.min(this.kf, kt); f <= Math.max(this.kf, kt) && ok; f++) if (this.attacked(sq(f, back), enemy)) ok = false;
+      if (ok) moves.push({ from: s, to: rsq, flags: ks ? 4 : 8, promo: 0 });
+    }
   }
 
   /**
@@ -414,6 +516,7 @@ class Chess {
   legalMoves() {
     const col = this.turn;
     const result = [];
+    if (this.vm && this.vResult()) return result;   // a won custom game has no more moves
     for (let s = 0; s < 128; s++) {
       if (s & 0x88) { s += 7; continue; }
       const p = this.board[s];
@@ -444,6 +547,7 @@ class Chess {
 
   hasLegalMove() {
     const col = this.turn;
+    if (this.vm && this.vResult()) return false;
     for (let s = 0; s < 128; s++) {
       if (s & 0x88) { s += 7; continue; }
       const p = this.board[s];
@@ -479,10 +583,13 @@ class Chess {
     }
     const p = this.board[m.from];
     const col = this.colorOf(p);
-    const captured = this.board[m.to];
+    const c960 = this.mode === 'c960' && (m.flags === 4 || m.flags === 8);   // castling is king-takes-rook here, nothing is captured
+    const captured = c960 ? 0 : this.board[m.to];
     const hist = {
       move: m,
       mover: col,
+      chk: this.vm ? { [WHITE]: this.chk[WHITE], [BLACK]: this.chk[BLACK] } : null,
+      c960: null, atom: null,
       pW: this.pW,
       kt: this.kingTaken,
       captured,
@@ -531,16 +638,37 @@ class Chess {
     if (this.mode === 'gamble' && captured && (captured & TYPE_MASK) === KING) this.kingTaken = captured & COLOR_MASK;
 
     // Move piece
-    this.board[m.to] = this.board[m.from];
-    this.board[m.from] = EMPTY;
+    if (c960) {
+      const bk = col === WHITE ? 0 : 7, ks = m.flags === 4;
+      const kTo = sq(ks ? 6 : 2, bk), rTo = sq(ks ? 5 : 3, bk);
+      hist.c960 = { kTo, rTo };
+      this.board[m.from] = EMPTY; this.board[m.to] = EMPTY;
+      this.board[kTo] = col | KING; this.board[rTo] = col | ROOK;
+    } else {
+      this.board[m.to] = this.board[m.from];
+      this.board[m.from] = EMPTY;
+    }
 
     // Promotion
     if (m.promo) {
       this.board[m.to] = col | m.promo;
     }
 
+    // Atomic: a capture blows up the capturing piece, the captured piece and every piece (not pawn) around the square
+    if (this.mode === 'atomic' && (captured || m.flags === 2)) {
+      const at = [[m.to, this.board[m.to]]];
+      this.board[m.to] = EMPTY;
+      for (const d of KING_DELTAS) {
+        const n = m.to + d;
+        if (n & 0x88) continue;
+        const b = this.board[n];
+        if (b && (b & TYPE_MASK) !== PAWN) { at.push([n, b]); this.board[n] = EMPTY; }
+      }
+      hist.atom = at;
+    }
+
     // Castling rook move
-    if (m.flags === 4) { // king side
+    if (c960) { /* done above */ } else if (m.flags === 4) { // king side
       const rFrom = col === WHITE ? sq(7,0) : sq(7,7);
       const rTo = col === WHITE ? sq(5,0) : sq(5,7);
       this.board[rTo] = this.board[rFrom];
@@ -559,10 +687,15 @@ class Chess {
       if (col === WHITE) this.castling &= ~0b0011;
       else this.castling &= ~0b1100;
     }
-    if (m.from === sq(0,0) || m.to === sq(0,0)) this.castling &= ~0b0010;
-    if (m.from === sq(7,0) || m.to === sq(7,0)) this.castling &= ~0b0001;
-    if (m.from === sq(0,7) || m.to === sq(0,7)) this.castling &= ~0b1000;
-    if (m.from === sq(7,7) || m.to === sq(7,7)) this.castling &= ~0b0100;
+    const qf = this.rfQ, kf = this.rfK;   // (the rooks start on a/h except in Chess960)
+    if (m.from === sq(qf,0) || m.to === sq(qf,0)) this.castling &= ~0b0010;
+    if (m.from === sq(kf,0) || m.to === sq(kf,0)) this.castling &= ~0b0001;
+    if (m.from === sq(qf,7) || m.to === sq(qf,7)) this.castling &= ~0b1000;
+    if (m.from === sq(kf,7) || m.to === sq(kf,7)) this.castling &= ~0b0100;
+    if (hist.atom) for (const a of hist.atom) {   // a rook blown up takes its castling right with it
+      if (a[0] === sq(qf,0)) this.castling &= ~0b0010; else if (a[0] === sq(kf,0)) this.castling &= ~0b0001;
+      else if (a[0] === sq(qf,7)) this.castling &= ~0b1000; else if (a[0] === sq(kf,7)) this.castling &= ~0b0100;
+    }
 
     // EP square
     this.ep = (m.flags === 1) ? (m.from + m.to) / 2 : -1;
@@ -572,6 +705,8 @@ class Chess {
     else this.halfmove++;
 
     if (col === BLACK) this.fullmove++;
+
+    if (this.mode === '3check' && this.kingAttacked(enemy)) this.chk[col]++;   // 3-Check: count the check just given
 
     // Chess Royale: moving a piece earns 1 elixir (up to 10)
     if (this.mode === 'royale') this.el[col] = Math.min(ELIXIR_MAX, this.el[col] + 1);
@@ -636,9 +771,18 @@ class Chess {
       this.snW = hist.sn.w; this.snB = hist.sn.b; this.snailKilled = hist.sn.kill;
     }
 
+    if (hist.chk) this.chk = hist.chk;
+    if (hist.atom) for (const a of hist.atom) this.board[a[0]] = a[1];   // put back everything that blew up
     this.castling = hist.castling;
     this.ep = hist.ep;
     this.halfmove = hist.halfmove;
+    if (hist.c960) {   // Chess960 castling: king and rook go back to where they started
+      this.board[hist.c960.kTo] = EMPTY; this.board[hist.c960.rTo] = EMPTY;
+      this.board[m.from] = mover | KING; this.board[m.to] = mover | ROOK;
+      if (mover === BLACK) this.fullmove--;
+      this.turn = mover;
+      return;
+    }
     this.secretQueen[mover] = hist.secretFrom;
     this.secretQueen[mover === WHITE ? BLACK : WHITE] = hist.enemySecret;
     this.revealed[mover] = hist.revealed;
@@ -793,7 +937,10 @@ Chess.prototype.toFen = function () {
     if (e) row += e;
     out.push(row);
   }
-  const cs = (this.castling & 1 ? 'K' : '') + (this.castling & 2 ? 'Q' : '') + (this.castling & 4 ? 'k' : '') + (this.castling & 8 ? 'q' : '');
+  const L = (b) => String.fromCharCode(b);
+  const cs = this.mode === 'c960'   // Chess960 names the rook's file instead (HAha for the normal setup)
+    ? (this.castling & 1 ? L(65 + this.rfK) : '') + (this.castling & 2 ? L(65 + this.rfQ) : '') + (this.castling & 4 ? L(97 + this.rfK) : '') + (this.castling & 8 ? L(97 + this.rfQ) : '')
+    : (this.castling & 1 ? 'K' : '') + (this.castling & 2 ? 'Q' : '') + (this.castling & 4 ? 'k' : '') + (this.castling & 8 ? 'q' : '');
   return out.join('/') + ' ' + (this.turn === WHITE ? 'w' : 'b') + ' ' + (cs || '-') + ' ' + (this.ep >= 0 ? alg(this.ep) : '-') + ' ' + this.halfmove + ' ' + this.fullmove;
 };
 /** Problems that would make a position unplayable (empty list = fine). Also drops castling rights that no longer make sense. */
@@ -827,6 +974,27 @@ Chess.prototype.problems = function () {
   this.castling = c;
   return out;
 };
+
+/** Custom gamemode settings travel as one short string (the database keeps them as text): Chess960 = start number, 3-Check = checks to win, Custom FEN = the FEN. */
+Chess.vpParse = (vm, s) => {
+  s = String(s == null ? '' : s);
+  if (vm === 'c960') return { pos: /^\d{1,3}$/.test(s) ? Math.min(959, +s) : 518 };
+  if (vm === '3check') return { n: /^\d$/.test(s) && +s >= 1 ? +s : 3 };
+  if (vm === 'fen') return { fen: s };
+  return null;
+};
+Chess.vpString = (vm, vp) => (vp ? String(vm === 'c960' ? vp.pos : vm === '3check' ? vp.n : vm === 'fen' ? vp.fen : '') : '');
+Chess.VARIANT_IDS = VARIANT_IDS;
+/** Names for the menus: [id, name, one line]. */
+Chess.VARIANTS = [
+  ['c960', 'Chess960', 'The back rank is shuffled. Castling still works, whatever the layout.'],
+  ['3check', '3-Check', 'Give check 3 times and you win (you can change how many).'],
+  ['koth', 'King of the Hill', 'Walk your king to the middle four squares to win.'],
+  ['atomic', 'Atomic', 'Every capture explodes. Blow up the enemy king to win.'],
+  ['horde', 'Horde', 'White has a huge wall of pawns, Black has the normal army.'],
+  ['racing', 'Racing Kings', 'No checks allowed. Be first to get your king to the 8th rank.'],
+  ['fen', 'Custom position', 'Start from any position you paste in as a FEN.'],
+];
 
 // Export for browser
 window.Chess = Chess;

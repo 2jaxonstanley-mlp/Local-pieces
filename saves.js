@@ -205,6 +205,6 @@
   if (cb) cb.addEventListener('click', () => { const s = S.all()[0]; if (s) resume(s); });
   const sb = $('#saves-btn');
   if (sb) sb.addEventListener('click', open);
-  LP.saves = { render, open, guard, view, rename, title, who, modeOf, progress, ago, stamp };
+  LP.saves = { render, open, guard, view, rename, title, who, modeOf, progress, ago, stamp, mini, resume, names };
   render();
 })();

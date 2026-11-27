@@ -446,7 +446,19 @@
   }
   function remaining() { if (g.fixedRem !== undefined) return g.fixedRem; return g.t0 ? Math.max(0, TOTAL - elapsed()) : TOTAL; }
 
+  /* a picture of the board for people watching from the player list (live.js) */
+  function liveRush() {
+    const ap = document.querySelector('.page.active');
+    if (!window.LP || !window.LP.live || !g || !g.cells || g.ended || !ap || ap.id !== 'rush') return;
+    window.LP.live.push('crush', 'Playing Capture Rush', () => {
+      const b = [];
+      for (let r = 7; r >= 0; r--) for (let f = 0; f < 8; f++) { const c = g.cells[r * 8 + f]; b.push(c ? (c.c === 'w' ? c.t.toUpperCase() : c.t.toLowerCase()) : '.'); }
+      const ix = (i) => (7 - (i >> 3)) * 8 + (i & 7);
+      return { b: b.join(''), lm: g.last ? [ix(g.last[0]), ix(g.last[1])] : null, nm: [cfg.names && cfg.names.w, cfg.names && cfg.names.b], sc: g.score, left: Math.round(remaining()), st: ($('#rush-status') || {}).textContent || '' };
+    }, 1500);
+  }
   function updateHud() {
+    liveRush();
     const rem = remaining();
     const t = $('#rush-time');
     t.textContent = fmtTime(rem);
@@ -595,6 +607,7 @@
     clearInterval(timerId); clearTimeout(aiTimer);
     clearRush();
     updateHud(); render(); setStatus('Time is up');
+    if (window.LP && window.LP.live) window.LP.live.end('crush');
     g.lb = recordScore();
     try {
       g.hist = buildReplay();

@@ -34,9 +34,15 @@
     if (!toId || toId === pid()) return;
     N().profileName(() => pick(toId, toName));
   }
+  const LAST = 'localPieces.chLast';
   function pick(toId, toName) {
     const games = GAMES();
+    let last = null;
+    try { last = JSON.parse(localStorage.getItem(LAST)); } catch (e) { last = null; }
+    const lg = last && games.find((g) => g.id === last.g);
+    if (lg && last.c) colour = last.c;
     LP.openSheet(`<h2>Challenge ${esc(toName)}<span class="sub">Pick the game. They will see it next time they are on the main menu.</span></h2>
+      ${lg ? `<button class="btn primary wide" id="ch-last" type="button">Same as last time: ${esc(lg.name)}</button>` : ''}
       <div class="ch-col" role="group" aria-label="Your colour"><small>Your colour</small>
         ${[['w', 'White'], ['r', 'Random'], ['b', 'Black']].map(([k, n]) => `<button class="chip${colour === k ? ' on' : ''}" data-c="${k}">${n}</button>`).join('')}</div>
       <div class="stack ch-games">
@@ -45,9 +51,11 @@
       </div>`, true);
     document.querySelectorAll('[data-c]').forEach((b) => { b.onclick = () => { colour = b.dataset.c; document.querySelectorAll('[data-c]').forEach((x) => x.classList.toggle('on', x === b)); }; });
     document.querySelectorAll('[data-g]').forEach((b) => { b.onclick = () => send(toId, toName, games.find((g) => g.id === b.dataset.g)); });
+    if ($('#ch-last')) $('#ch-last').onclick = () => send(toId, toName, lg);
     $('#ch-x').onclick = LP.closeSheet;
   }
   async function send(toId, toName, g) {
+    try { localStorage.setItem(LAST, JSON.stringify({ g: g.id, c: colour })); } catch (e) { /* ignore */ }
     LP.openSheet('<h2>Sending…</h2>');
     const r = await N().post({ a: 'chsend', pid: pid(), to: toId, name: LP.profile.name(), kind: g.kind, mode: g.mode, base: g.base, inc: g.inc, side: colour, info: await N().myInfo() }, 2);
     if (!r || r.error || !r.cid) {
@@ -120,7 +128,23 @@
 
   function receive(list) {
     incoming = Array.isArray(list) ? list : [];
+    if (LP.notify) incoming.forEach((c) => LP.notify.add({ key: 'ch' + c.cid, k: 'challenge', text: c.name + ' challenged you to ' + gameName(c), act: 'challenge', data: { cid: c.cid, from: c.from, name: c.name } }));
     popup();
+  }
+  /** From the notification list: show the waiting challenge again (it may have expired by now). */
+  function open() {
+    snoozed.clear();
+    if (!incoming.length) { toast('That challenge has expired'); return; }
+    LP.showPage('menu');
+    setTimeout(popup, 250);
+  }
+  /** From a notification's buttons: 'accept' or 'decline' a waiting challenge. Returns false when it is gone (expired or already answered). */
+  function respond(cid, what) {
+    const c = incoming.find((x) => x.cid === cid);
+    if (!c) { toast('That challenge has expired'); return false; }
+    if (what === 'accept') accept(c);
+    else { incoming = incoming.filter((x) => x.cid !== cid); N().post({ a: 'chno', cid, pid: pid() }, 2); toast('Challenge declined'); }
+    return true;
   }
   function popup() {
     if (!incoming.length || !onMenu() || sheetOpen() || busy()) return;
@@ -160,5 +184,5 @@
     }).observe(menu, { attributes: true, attributeFilter: ['class'] });
   }
   if (out.length) setTimeout(poll, 2000);
-  LP.challenge = { ask, receive, popup, mine: () => out.slice() };
+  LP.challenge = { ask, receive, popup, open, respond, mine: () => out.slice() };
 })();

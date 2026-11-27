@@ -19,10 +19,12 @@
   const IDLE_MS = 45000;
   const POLL_MS = 100;     // gap between polls (a poll waits for Realtime news, or 4 seconds, before it answers)
   const HOLD_MS = 4000;
-  const TIMES = [[60, 0, '1 minute'], [180, 1, '3 minutes + 1'], [300, 0, '5 minutes'], [600, 0, '10 minutes']];
+  const TIMES = [[10, 0, 'Super Bullet (10.1s + 0.1s)'], [60, 0, '1 minute'], [180, 1, '3 minutes + 1'], [300, 0, '5 minutes'], [600, 0, '10 minutes']];
   const esc = (t) => LP.esc(String(t == null ? '' : t));
   const rnd = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => (b % 36).toString(36)).join('');
-  const label = (mode, base, inc) => (mode === 'timed' ? (base % 60 === 0 ? base / 60 + ' min' : base + ' s') + (inc ? ' + ' + inc : '') : 'Unlimited');
+  const vName = (v) => { const x = (window.Chess && Chess.VARIANTS || []).find((y) => y[0] === v); return x ? x[1] : ''; };
+  const label = (mode, base, inc, vm) => (vm ? vName(vm) + ' · ' : '') + labelT(mode, base, inc);
+  const labelT = (mode, base, inc) => (mode === 'timed' && base === 10 ? 'Super Bullet (10.1s + 0.1s)' : mode === 'timed' ? (base % 60 === 0 ? base / 60 + ' min' : base + ' s') + (inc ? ' + ' + inc : '') : 'Unlimited');
 
   /* ---------------------------------------------------------------- network (Supabase) */
   const chains = {};   // writes go one after another per lane: puzzle scores never wait behind a puzzle upload
@@ -152,7 +154,9 @@
     inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') ok(); });
   }
 
+  let home = () => mainSheet();   // where the Back buttons go: the Online menu or the Custom menu
   function mainSheet() {
+    home = mainSheet;
     if (!url()) {
       LP.openSheet(`<h2>Online is not set up yet<span class="sub">The server address is missing.</span></h2>
         <p class="note">Paste your Supabase Project URL and anon key into supabase-config.js, then upload it again.</p>
@@ -183,7 +187,7 @@
       </div>`, true);
     $('#k-t').onclick = askTime;
     $('#k-u').onclick = () => askWho({ mode: 'unlimited', base: 0, inc: 0 });
-    $('#k-b').onclick = mainSheet;
+    $('#k-b').onclick = () => home();
     $('#k-x').onclick = LP.closeSheet;
   }
 
@@ -214,7 +218,7 @@
   async function create(cfg) {
     const tok = rnd();
     LP.openSheet('<h2>Creating game…</h2>');
-    const r = await post({ a: 'create', mode: cfg.mode, base: cfg.base, inc: cfg.inc, pub: cfg.pub, side: 'r', name: LP.profile.name(), tok, info: await myInfo() }, 2);
+    const r = await post({ a: 'create', mode: cfg.mode, base: cfg.base, inc: cfg.inc, pub: cfg.pub, side: 'r', name: LP.profile.name(), tok, info: await myInfo(), vm: cfg.vm || '', vp: cfg.vp || '' }, 2);
     if (!r || !r.id) { failSheet(r && r.error); return; }
     waitSheet(r.id, tok, cfg, false);
   }
@@ -229,7 +233,7 @@
   function waitSheet(id, tok, cfg, rematch) {
     stopAll();
     wait = { id, tok };
-    LP.openSheet(`<h2>${rematch ? 'Rematch asked' : 'Waiting for a player'}<span class="sub">${rematch ? 'Waiting for your opponent to accept.' : esc(label(cfg.mode, cfg.base, cfg.inc)) + (cfg.pub ? ' · Public' : ' · Private')}</span></h2>
+    LP.openSheet(`<h2>${rematch ? 'Rematch asked' : 'Waiting for a player'}<span class="sub">${rematch ? 'Waiting for your opponent to accept.' : esc(label(cfg.mode, cfg.base, cfg.inc, cfg.vm)) + (cfg.pub ? ' · Public' : ' · Private')}</span></h2>
       <div class="on-code" id="on-code">${esc(id)}</div>
       <p class="note">${rematch ? '' : 'Send this code to your friend. They tap Online, then Join with a code.'}</p>
       <div class="row"><button class="btn" id="wt-copy">Copy code</button><button class="btn" id="wt-x">Cancel</button></div>`, false);
@@ -255,7 +259,7 @@
     const inp = $('#j-code');
     const go = () => { const c = inp.value.trim().toUpperCase(); if (c.length >= 4) joinGame(c); };
     $('#j-ok').onclick = go;
-    $('#j-b').onclick = mainSheet;
+    $('#j-b').onclick = () => home();
     inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
   }
 
@@ -270,14 +274,15 @@
   async function listSheet() {
     LP.openSheet('<h2>Open games<span class="sub">Looking…</span></h2>', true);
     const r = await get({ a: 'list' });
-    if (!r || !r.games) { failSheet(r && r.error, mainSheet); return; }
+    if (!r || !r.games) { failSheet(r && r.error, () => home()); return; }
+    r.games = r.games.filter((g) => (home === customMain) === !!g.vm);   // the Custom menu lists custom gamemodes, the Online menu the normal games
     LP.openSheet(`<h2>Open games<span class="sub">${r.games.length ? 'Tap one to join.' : 'Nobody is waiting right now.'}</span></h2>
       <div class="stack">
-        ${r.games.map((g) => `<button class="btn big ol-game" data-id="${esc(g.id)}">${avOf(g.pfs, g.name)}<span class="ol-gt"><b>${esc(g.name)}</b><small>${esc(label(g.mode, g.base, g.inc))}</small></span><span class="ol-elo">${g.elo || 'new'}<small>Elo</small></span></button>`).join('')}
+        ${r.games.map((g) => `<button class="btn big ol-game" data-id="${esc(g.id)}">${avOf(g.pfs, g.name)}<span class="ol-gt"><b>${esc(g.name)}</b><small>${esc(label(g.mode, g.base, g.inc, g.vm))}</small></span>${g.vm ? '' : `<span class="ol-elo">${g.elo || 'new'}<small>Elo</small></span>`}</button>`).join('')}
         <div class="row"><button class="btn" id="l-b">Back</button><button class="btn" id="l-r">Refresh</button></div>
       </div>`, true);
     document.querySelectorAll('[data-id]').forEach((b) => { b.onclick = () => joinGame(b.dataset.id); });
-    $('#l-b').onclick = mainSheet;
+    $('#l-b').onclick = () => home();
     $('#l-r').onclick = listSheet;
   }
 
@@ -286,8 +291,8 @@
     if (net && net.id === id) return;   // this game is already running: never start it a second time
     stopAll();
     net = { id, tok, me: s.you, n: 0, timer: 0, drawShown: false, offered: false, rematchShown: false, over: false, busy: false, overPolls: 0, ud: s.ud || 0, undoAsked: false, undoShown: -1, rxShown: '' };
-    const cat = catOf(s.mode, s.base);
-    LP.chessOnline.start({ id, me: s.you, names: s.names, base: s.mode === 'timed' ? s.base : 0, inc: s.inc, cat, opp: s.opp ? { elo: (s.opp.elo || {})[cat] || 0, pfs: s.opp.pfs || '' } : null });
+    const cat = s.vm ? '' : catOf(s.mode, s.base);   // custom gamemodes have no Elo
+    LP.chessOnline.start({ id, vm: s.vm || '', vp: s.vp || '', me: s.you, names: s.names, base: s.mode === 'timed' ? s.base : 0, inc: s.inc, cat, opp: s.opp ? { elo: cat ? (s.opp.elo || {})[cat] || 0 : 0, pfs: s.opp.pfs || '' } : null });
     // moves already on the server (a game joined late) are applied straight away
     onState(s, 0);
     schedule();
@@ -445,7 +450,7 @@
     report(result, type) {
       if (!net || net.over) return;
       net.over = true;
-      const reason = type === 'time' ? 'timeout' : type;
+      const reason = type === 'time' ? 'timeout' : type === 'vdraw' ? 'variant' : type;
       post({ a: 'end', id: net.id, tok: net.tok, result, reason }, 6);
     },
     askUndo() {
@@ -469,9 +474,116 @@
     leave() { if (net) { clearTimeout(net.timer); net = null; } },
   };
 
+  /* ------------------------------------------------------------------- Custom gamemodes: the same screens as Online, with a list of gamemodes in place of the clock chooser */
+  function customMain() {
+    home = customMain;
+    if (!url()) { mainSheet(); return; }
+    get({ a: 'ping' });
+    LP.openSheet(`<h2>Custom<span class="sub">Play a friend with different rules.</span></h2>
+      <div class="stack">
+        <button class="btn big primary" id="on-new">Create a game</button>
+        <button class="btn big" id="on-join">Join with a code</button>
+        <button class="btn big" id="on-list">Open games</button>
+        <button class="btn" id="on-x">Cancel</button>
+      </div>`, true);
+    $('#on-new').onclick = () => profileName(() => customModes());
+    $('#on-join').onclick = () => profileName(() => joinSheet());
+    $('#on-list').onclick = () => profileName(() => listSheet());
+    $('#on-x').onclick = LP.closeSheet;
+  }
+
+  function customModes() {
+    LP.openSheet(`<h2>Create a game<span class="sub">Pick a gamemode.</span></h2>
+      <div class="stack">
+        ${Chess.VARIANTS.map((v, i) => `<button class="btn big" data-v="${i}"><b>${esc(v[1])}</b><small>${esc(v[2])}</small></button>`).join('')}
+        <div class="row"><button class="btn" id="m-b">Back</button><button class="btn" id="m-x">Cancel</button></div>
+      </div>`, true);
+    document.querySelectorAll('[data-v]').forEach((b) => { b.onclick = () => customParams(Chess.VARIANTS[+b.dataset.v][0]); });
+    $('#m-b').onclick = customMain;
+    $('#m-x').onclick = LP.closeSheet;
+  }
+
+  /** Settings of a gamemode (a Chess960 number, the number of checks, a FEN), then the clock and who can join. */
+  function customParams(vm, vp, err) {
+    const v = Chess.VARIANTS.find((x) => x[0] === vm);
+    if (vm !== 'c960' && vm !== '3check' && vm !== 'fen') { customFinal(vm, ''); return; }
+    const body = vm === 'c960' ? `<p class="note">Pick a start position from 0 to 959, or leave it empty for a random one. 518 is the normal chess setup.</p>
+        <input id="p-in" type="text" inputmode="numeric" maxlength="3" placeholder="Random" autocomplete="off" value="${esc(vp || '')}" style="text-align:center">`
+      : vm === '3check' ? `<p class="note">How many checks does it take to win?</p>
+        <div class="chips" id="p-chips">${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="chip${String(vp || 3) === String(n) ? ' on' : ''}" data-n="${n}">${n}</button>`).join('')}</div>`
+      : `<p class="note">Paste a position as a FEN. Both kings must be on the board.</p>
+        <input id="p-in" type="text" maxlength="100" placeholder="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(vp || '')}">`;
+    LP.openSheet(`<h2>${esc(v[1])}<span class="sub">${esc(v[2])}</span></h2>${body}${err ? `<p class="note" style="color:#ff8a8a">${esc(err)}</p>` : ''}
+      <div class="row"><button class="btn" id="p-b">Back</button><button class="btn primary" id="p-ok">Next</button></div>`, true);
+    let n = +(vp || 3);
+    document.querySelectorAll('#p-chips [data-n]').forEach((b) => { b.onclick = () => { n = +b.dataset.n; document.querySelectorAll('#p-chips [data-n]').forEach((x) => x.classList.toggle('on', x === b)); }; });
+    $('#p-b').onclick = customModes;
+    $('#p-ok').onclick = () => {
+      if (vm === '3check') { customFinal(vm, String(n)); return; }
+      const t = ($('#p-in').value || '').trim();
+      if (vm === 'c960') {
+        if (t === '') { customFinal(vm, String(Math.floor(Math.random() * 960))); return; }
+        if (!/^\d{1,3}$/.test(t) || +t > 959) { customParams(vm, t, 'Use a number from 0 to 959.'); return; }
+        customFinal(vm, String(+t)); return;
+      }
+      const probe = new Chess(); probe.mode = 'fen';
+      const e = probe.loadFen(t);
+      if (e) { customParams(vm, t, e); return; }
+      const pr = probe.problems();
+      if (pr.length) { customParams(vm, t, pr[0]); return; }
+      customFinal(vm, probe.toFen());
+    };
+  }
+
+  let cClock = 0;   // index into CLOCKS: the clock chosen on the last game screen
+  const CLOCKS = [[0, 0, 'Unlimited'], [10, 0, 'Super Bullet'], [60, 0, '1 min'], [180, 1, '3 + 1'], [300, 0, '5 min'], [600, 0, '10 min']];
+  function customFinal(vm, vp) {
+    const v = Chess.VARIANTS.find((x) => x[0] === vm);
+    LP.openSheet(`<h2>${esc(v[1])}<span class="sub">Clock and who can join.</span></h2>
+      <div class="chips" id="c-chips">${CLOCKS.map((c, i) => `<button type="button" class="chip${i === cClock ? ' on' : ''}" data-c="${i}">${c[2]}</button>`).join('')}</div>
+      <div class="stack" style="margin-top:12px">
+        <button class="btn big" id="w-priv"><b>Private</b><small>Only people you give the code to.</small></button>
+        <button class="btn big" id="w-pub"><b>Public</b><small>Shows in Open games for anyone.</small></button>
+        <button class="btn big" id="w-cpu"><b>Play the computer</b><small>On this device, no clock.</small></button>
+        <div class="row"><button class="btn" id="w-b">Back</button><button class="btn" id="w-x">Cancel</button></div>
+      </div>`, true);
+    document.querySelectorAll('#c-chips [data-c]').forEach((b) => { b.onclick = () => { cClock = +b.dataset.c; document.querySelectorAll('#c-chips [data-c]').forEach((x) => x.classList.toggle('on', x === b)); }; });
+    const mk = (pub) => () => { const c = CLOCKS[cClock]; create({ mode: c[0] ? 'timed' : 'unlimited', base: c[0], inc: c[1], pub, vm, vp }); };
+    $('#w-priv').onclick = mk(0);
+    $('#w-pub').onclick = mk(1);
+    $('#w-cpu').onclick = () => { LP.closeSheet(); LP.customLocal(vm, vp); };
+    $('#w-b').onclick = () => (vm === 'c960' || vm === '3check' || vm === 'fen' ? customParams(vm, vp) : customModes());
+    $('#w-x').onclick = LP.closeSheet;
+  }
+
+  /** From the Classic screen: Online with the time already picked there. pre = { base, inc } (seconds) or null for unlimited. */
+  function onlinePlay(pre) {
+    home = () => onlinePlay(pre);
+    if (!url()) { mainSheet(); return; }
+    get({ a: 'ping' });
+    let cfg = { mode: 'unlimited', base: 0, inc: 0 };
+    if (pre && pre.base) {
+      const near = TIMES.reduce((a, t) => (Math.abs(t[0] - (pre.base > 10 && pre.base < 11 ? 10 : pre.base)) < Math.abs(a[0] - (pre.base > 10 && pre.base < 11 ? 10 : pre.base)) ? t : a), TIMES[0]);
+      cfg = { mode: 'timed', base: near[0], inc: near[1] };
+    }
+    LP.openSheet(`<h2>Online<span class="sub">${esc(label(cfg.mode, cfg.base, cfg.inc))}</span></h2>
+      <div class="stack">
+        <button class="btn big primary" id="op-new">Create a game</button>
+        <button class="btn big" id="op-join">Join with a code</button>
+        <button class="btn big" id="op-list">Open games</button>
+        <button class="btn" id="op-x">Cancel</button>
+      </div>`, true);
+    $('#op-new').onclick = () => profileName(() => askWho(cfg));
+    $('#op-join').onclick = () => profileName(() => joinSheet());
+    $('#op-list').onclick = () => profileName(() => listSheet());
+    $('#op-x').onclick = LP.closeSheet;
+  }
+  LP.onlinePlay = onlinePlay;
+
   /** The network helpers are shared with Puzzle Battle and the global leaderboard. */
   LP.onlineApi = { get, post, rawGet, rawPost, client, rnd, url, sleep, countdown, TIMES, label, myInfo, profileName, catOf };
 
   const card = document.querySelector('.mode[data-mode="online"]');
   if (card) card.addEventListener('click', mainSheet);
+  document.querySelectorAll('.mode[data-mode="custom"]').forEach((c) => c.addEventListener('click', customMain));
 })();

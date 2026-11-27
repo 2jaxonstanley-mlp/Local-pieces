@@ -34,6 +34,7 @@
   BOARDS.push({ id: 'metal', name: 'Metal', l: '#cccccc', d: '#787878', li: 'url(board-metal-light.png)', di: 'url(board-metal-dark.png)', flat: true, r: 'epic' });
   BOARDS.push({ id: 'stone', name: 'Stone', l: '#ada9a3', d: '#4f4e4b', li: 'url(board-stone-light.png)', di: 'url(board-stone-dark.png)', flat: true, r: 'rare' });
   BOARDS.push({ id: 'newspaper', name: 'Newspaper', l: '#cac8c0', d: '#a3a29b', li: 'url(board-newspaper-light.png)', di: 'url(board-newspaper-dark.png)', flat: true, r: 'epic' });
+  BOARDS.push({ id: 'custom', name: 'Your Own Board', l: '#eeeed2', d: '#769656', custom: true, r: 'legendary' });   // legendary: you draw the two squares or turn a picture into them (see boardeditor.js)
   BOARDS.push({ id: 'neonboard', name: 'Neon Grid', l: '#1b1550', d: '#09071f', neon: true, r: 'legendary' });
   const PIECES = [];
   /* picture packs: one sprite sheet each (white P B Q K N R, then black P B Q K N R), and the CSS-drawn neon pack */
@@ -47,6 +48,7 @@
   PIECES.push({ id: 'condal', name: 'Condal', pk: 'sheet', sheet: 'pk-condal-hd.png', r: 'epic' });
   PIECES.push({ id: 'light', name: 'Light', pk: 'sheet', sheet: 'pk-light-hd.png', r: 'rare' });
   PIECES.push({ id: 'space', name: 'Space', pk: 'sheet', sheet: 'pk-space-hd.png', r: 'epic' });
+  PIECES.push({ id: 'kirikun', name: 'Kirikun-sily', pk: 'sheet', sheet: 'pk-kirikun-hd.png', r: 'epic' });
   PIECES.push({ id: 'neon', name: 'Neon', pk: 'neon', r: 'legendary' });
   const HATS = [
     ['grad', 'Graduate', 'common'], ['sun', 'Sun Hat', 'common'], ['hard', 'Hard Hat', 'common'], ['party', 'Party Hat', 'common'],
@@ -107,7 +109,9 @@
   if (refunded.length) setTimeout(() => popup('Removed: ' + refunded.join(', ') + '. Refunded <b>' + refunded.length * COST + '</b> tokens'), 1800);
 
   /* ------------------------------------------------------------------ cosmetics */
-  const find = (slot, id) => CRATES[slot].items.find((x) => x.id === id);
+  /** Your Own Board takes its colours and square pictures from the design saved on this device. */
+  const ownBoard = (x) => { const r = LP.boardEditor ? LP.boardEditor.resolve() : {}; return Object.assign({}, x, { l: r.l || x.l, d: r.d || x.d, li: r.li || '', di: r.di || '' }); };
+  const find = (slot, id) => { const x = CRATES[slot].items.find((y) => y.id === id); return x && slot === 'board' && x.custom ? ownBoard(x) : x; };
 
   /* Doodle board: every square is a little pencil and crayon drawing, made once as an SVG picture. Six different light and six dark
      squares are handed out in turn, so no two neighbours look alike, and each one has crooked, overshooting outline strokes. */
@@ -169,8 +173,7 @@
     document.body.dataset.pack = '1';
     PK = p && p.pk ? p.pk : '';
     PX = p && p.px ? '1' : '';
-    if (LP.prefs && LP.prefs.look) LP.prefs.look();     // custom board colours from Settings win over the equipped board
-    tagKings();
+    tagKings(); skinMini();
   }
   let PK = '', PX = '';
   const KIND = { 0x265A: 'k', 0x265B: 'q', 0x265C: 'r', 0x265D: 'b', 0x265E: 'n', 0x265F: 'p' };
@@ -194,7 +197,7 @@
     if (!(url in sheetBad)) {
       sheetBad[url] = false;
       const im = new Image();
-      im.onerror = () => { sheetBad[url] = true; try { tagKings(); } catch (e) { /* ignore */ } };
+      im.onerror = () => { sheetBad[url] = true; try { tagKings(); skinMini(); } catch (e) { /* ignore */ } };
       im.src = url;
     }
     return !sheetBad[url];
@@ -231,8 +234,25 @@
       }
     });
   }
+  /* mini boards outside a game (Continue Playing, Popular and daily puzzle pictures) wear the picture pieces you have equipped, the same for both colours.
+     Neon pieces are drawn per game piece, so on a mini board they stay as plain glyphs. */
+  function skinMini() {
+    const sk = skinOf(S.slots.p1);
+    document.querySelectorAll('.mb b').forEach((pe) => {
+      const kind = KIND[pe.textContent.charCodeAt(0)];
+      if (!kind || sk.pk !== 'sheet') {
+        if (pe.dataset.pk) { delete pe.dataset.pk; delete pe.dataset.px; pe.style.removeProperty('--px'); pe.style.removeProperty('--sheet'); }
+        return;
+      }
+      const px = ((SHEET_AT[kind] + (pe.classList.contains('b') ? 6 : 0)) / 11 * 100) + '%', u = 'url(' + sk.sheet + ')';
+      if (pe.dataset.pk !== 'sheet') pe.dataset.pk = 'sheet';
+      if (sk.px) { if (pe.dataset.px !== '1') pe.dataset.px = '1'; } else if (pe.dataset.px) delete pe.dataset.px;
+      if (pe.style.getPropertyValue('--px') !== px) pe.style.setProperty('--px', px);
+      if (pe.style.getPropertyValue('--sheet') !== u) pe.style.setProperty('--sheet', u);
+    });
+  }
   let kt = 0;
-  new MutationObserver(() => tagKings()).observe(document.getElementById('app'), { childList: true, subtree: true, characterData: true });
+  new MutationObserver(() => { tagKings(); skinMini(); }).observe(document.getElementById('app'), { childList: true, subtree: true, characterData: true });
 
   /* ------------------------------------------------------------------ tokens + toast */
   let toastT = 0;
@@ -331,9 +351,17 @@
       e.lv++; e.done++;
     }
     write(EKEY, E);
-    if (got) { S.tokens += got; saveS(); popup(coin + ' Endless goal complete: ' + esc(ENDLESS[k].text(last)) + ' <b>+' + got + '</b>'); }
+    if (got) { S.tokens += got; saveS(); popup(coin + ' Endless goal complete: ' + esc(ENDLESS[k].text(last)) + ' <b>+' + got + '</b>'); if (LP.notify) LP.notify.add({ k: 'quest', text: 'Endless goal complete: ' + ENDLESS[k].text(last) + ' (+' + got + ' tokens)', act: 'shop' }); }
   }
 
+  /** The unfinished daily + weekly quests, for the in-game quest bar. */
+  const listeners = [];
+  const changed = () => listeners.forEach((f) => { try { f(); } catch (e) { /* a listener must never break a quest */ } });
+  function openQuests() {
+    ensureDay();
+    const pick = (box, defs, scope) => box.list.filter((t) => !t.done).map((t) => ({ scope, ev: defs[t.k].ev, key: t.k, text: defs[t.k].text(t.n), p: t.p, n: t.n, r: t.r, ic: defs[t.k].ic }));
+    return pick(D, DEFS, 'Daily').concat(pick(W, WDEFS, 'Weekly'));
+  }
   function tick(ev, amount) {
     ensureDay();
     [[D, DEFS, 'Daily'], [W, WDEFS, 'Weekly']].forEach(([box, defs, label]) => {
@@ -344,11 +372,13 @@
           t.done = true;
           S.tokens += t.r; saveS();
           popup(coin + ' ' + label + ' complete: ' + esc(defs[t.k].text(t.n)) + ' <b>+' + t.r + '</b>');
+          if (LP.notify) LP.notify.add({ k: 'quest', text: label + ' quest complete: ' + defs[t.k].text(t.n) + ' (+' + t.r + ' tokens)', act: 'shop' });
         }
       });
     });
     if (ev === 'capture') endlessTick('capture', amount);
     write(DKEY, D); write(WKEY, W);
+    changed();
     refresh();
   }
 
@@ -356,6 +386,7 @@
   /** Called by the games: 'game' {mode, won, level...}, 'capture' n, 'puzzle', 'rush'. */
   function event(name, p) {
     if (LP.stats && LP.stats.event) LP.stats.event(name, p);
+    if ((name === 'game' || name === 'onlinegame' || name === 'rush') && LP.daily) LP.daily.game();   // a finished game counts for the day streak
     if (name === 'game') {
       tick('play', 1);
       if (p && p.won) { tick('win', 1); if (HARD[p.level]) tick('hardwin', 1); if ((p.mode === 'basic' || p.mode === 'secret' || p.mode === 'bullet' || p.mode === 'rapid') && MEDIUM_UP[p.level]) { endlessTick('wins', 1); refresh(); } }
@@ -539,6 +570,20 @@
     const r = $('#bg-rm'); if (r) r.onclick = () => { try { localStorage.removeItem(IMGKEY); } catch (e) { /* ignore */ } if (S.equipped.bg === 'custom') S.equipped.bg = ''; saveS(); apply(); LP.closeSheet(); renderShop(); popup('Picture removed'); };
     $('#bg-x').onclick = () => { LP.closeSheet(); renderShop(); };
   }
+  /** Legendary board: draw it or build it from a picture (boardeditor.js), then use it. */
+  function customBoardFlow() {
+    const has = LP.boardEditor && LP.boardEditor.has();
+    const useIt = () => { S.equipped.board = 'custom'; saveS(); apply(); LP.closeSheet(); renderShop(); popup('Your own board is equipped'); };
+    LP.openSheet(`<h2>Your own board<span class="sub">Draw the squares or use a picture. It stays on this device and only you see it.</span></h2>
+      <div class="stack">${has ? '<button class="btn primary" id="bd-use">Use it</button>' : ''}
+      <button class="btn ${has ? '' : 'primary'}" id="bd-edit">${has ? 'Edit my board' : 'Design my board'}</button>
+      ${has ? '<button class="btn" id="bd-rm">Remove my design</button>' : ''}
+      <button class="btn" id="bd-x">Cancel</button></div>`, true);
+    const u = $('#bd-use'); if (u) u.onclick = useIt;
+    $('#bd-edit').onclick = () => LP.boardEditor.open(useIt);
+    const r = $('#bd-rm'); if (r) r.onclick = () => { LP.boardEditor.remove(); if (S.equipped.board === 'custom') S.equipped.board = ''; saveS(); apply(); LP.closeSheet(); renderShop(); popup('Design removed'); };
+    $('#bd-x').onclick = () => { LP.closeSheet(); renderShop(); };
+  }
   function equipFlow(slot, id) {
     if (slot === 'hat') {
       if (id) return chooseHat(find('hat', id));
@@ -546,6 +591,7 @@
     }
     if (slot === 'piece') return choosePieceWho(id ? find('piece', id) : RETRO);
     if (slot === 'bg' && id === 'custom') return customBgFlow();
+    if (slot === 'board' && id === 'custom') return customBoardFlow();
     S.equipped[slot] = id; saveS(); apply(); LP.closeSheet(); renderShop();
     popup((id ? esc(find(slot, id).name) : dflt[slot].name) + ' equipped');
   }
@@ -655,7 +701,10 @@
             <span class="sh-cnt">${got} of ${c.items.length} found</span></span>
         </div>
         <div class="sh-odds">${rollOdds(slot).map(([r, p]) => `<span class="od" style="--rc:${RARITY[r].c}">${RARITY[r].name} <b>${p}%</b></span>`).join('')}</div>
-        <button class="sh-open" data-open="${slot}" ${can ? '' : 'disabled'}>${coin}<span>Open crate for ${COST}</span></button>
+        <div class="sh-open-row">
+          <button class="sh-open" data-open="${slot}" ${can ? '' : 'disabled'}>${coin}<span>Open crate for ${COST}</span></button>
+          <button class="sh-open sh-open3" data-open3="${slot}" ${S.tokens >= COST * 3 ? '' : 'disabled'} aria-label="Open three crates for ${COST * 3} tokens">${coin}<span>Open 3× for ${COST * 3}</span></button>
+        </div>
         ${can ? '' : `<p class="sh-need">You need ${COST - S.tokens} more token${COST - S.tokens === 1 ? '' : 's'}. Daily tasks pay tokens.</p>`}
       </section>
       <h3 class="sh-sub">Collection</h3>
@@ -663,6 +712,7 @@
     if (LP.upgrades) LP.upgrades.wire($('#sh-list'));
     document.querySelectorAll('[data-tab]').forEach((b) => { b.onclick = () => { tab = b.dataset.tab; renderShop(); }; });
     document.querySelectorAll('[data-open]').forEach((b) => { b.onclick = () => openCrate(b.dataset.open); });
+    document.querySelectorAll('[data-open3]').forEach((b) => { b.onclick = () => openCrate3(b.dataset.open3); });
     document.querySelectorAll('.sh-tile').forEach((b) => {
       wireHover(b);
       b.onclick = () => {
@@ -708,6 +758,57 @@
     }, 1200);
   }
 
+  /** A free crate (the daily reward's bonus): rolls a random crate for free, adds the item and shows what it was. */
+  function freeCrate() {
+    const slots = Object.keys(CRATES);
+    const slot = slots[Math.floor(Math.random() * slots.length)];
+    const it = roll(slot);
+    const dup = !!S.owned[slot + ':' + it.id];
+    S.owned[slot + ':' + it.id] = true;
+    if (dup) S.tokens += RARITY[it.r].refund;
+    saveS(); refresh();
+    const rc = RARITY[it.r].c;
+    LP.openSheet(`<div class="cr-reveal" style="--rc:${rc}">
+      <span class="cr-rar">${RARITY[it.r].name}</span>
+      <div class="cr-item">${preview(slot, it)}</div>
+      <h2>${esc(it.name)}<span class="sub">Free crate from your daily reward. ${dup ? 'Already collected, so you got ' + RARITY[it.r].refund + ' token' + (RARITY[it.r].refund > 1 ? 's' : '') + ' back.' : 'New item added to your collection!'}</span></h2>
+      <div class="row"><button class="btn" id="cr-done">Done</button><button class="btn primary" id="cr-eq">Equip</button></div></div>`);
+    $('#cr-done').onclick = () => { LP.closeSheet(); renderShop(); };
+    $('#cr-eq').onclick = () => equipFlow(slot, it.id);
+  }
+
+  /** Three crates in a row: pay once, roll three times, then open them one after another and show all three together. */
+  function openCrate3(slot) {
+    if (S.tokens < COST * 3) return;
+    S.tokens -= COST * 3;
+    const got = [];
+    for (let k = 0; k < 3; k++) {              // each roll is saved before the next, so a new item is not rolled twice
+      const it = roll(slot);
+      const dup = !!S.owned[slot + ':' + it.id];
+      S.owned[slot + ':' + it.id] = true;
+      if (dup) S.tokens += RARITY[it.r].refund;
+      got.push({ it, dup });
+    }
+    saveS(); refresh();
+    const card = (g, k) => `<div class="cr3-c wait" data-k="${k}" style="--rc:${RARITY[g.it.r].c}">
+        <span class="crate shake-idle" data-c="${slot}"></span>
+        <span class="cr3-in"><span class="cr-rar">${RARITY[g.it.r].name}</span><span class="sh-pv">${preview(slot, g.it)}</span><b class="cr3-nm">${esc(g.it.name)}</b><small>${g.dup ? '+' + RARITY[g.it.r].refund + ' back' : 'New!'}</small></span></div>`;
+    LP.openSheet(`<div class="cr3-wrap"><div class="cr3">${got.map(card).join('')}</div><p class="cr-hint" id="cr3-hint">Opening 3 crates...</p><div id="cr3-end"></div></div>`);
+    const cards = [...document.querySelectorAll('.cr3-c')];
+    cards.forEach((el, k) => {
+      setTimeout(() => el.classList.add('shaking'), 250 + k * 1100);
+      setTimeout(() => { el.classList.remove('wait', 'shaking'); el.classList.add('open'); }, 1000 + k * 1100);
+    });
+    setTimeout(() => {
+      const back = got.reduce((a, g) => a + (g.dup ? RARITY[g.it.r].refund : 0), 0);
+      const hint = $('#cr3-hint'); if (hint) hint.textContent = back ? 'Tap an item to equip it. ' + back + ' token' + (back > 1 ? 's' : '') + ' came back from duplicates.' : 'Tap an item to equip it.';
+      $('#cr3-end').innerHTML = `<div class="row"><button class="btn" id="cr3-done">Done</button></div><button class="btn wide" id="cr3-more" ${S.tokens >= COST * 3 ? '' : 'disabled'}>Open 3× again (${COST * 3})</button>`;
+      $('#cr3-done').onclick = () => { LP.closeSheet(); renderShop(); };
+      $('#cr3-more').onclick = () => { renderShop(); openCrate3(slot); };
+      cards.forEach((el, k) => { el.onclick = () => equipFlow(slot, got[k].it.id); el.classList.add('tap'); });
+    }, 1000 + 2 * 1100 + 700);
+  }
+
   /* ------------------------------------------------------------------ pages + menu */
   function refresh() {
     ensureDay();
@@ -731,7 +832,7 @@
   $('#sh-back').addEventListener('click', () => { LP.closeSheet(); LP.showPage('menu'); refresh(); });
   $('#tk-shop').addEventListener('click', () => openPage('shop'));
 
-  LP.rewards = { event, addTokens, tokens: () => S.tokens, spend: (n) => { if (S.tokens < n) return false; S.tokens -= n; saveS(); refresh(); return true; }, rerender: () => { if ($('#shop').classList.contains('active')) renderShop(); } };
+  LP.rewards = { event, addTokens, freeCrate, openQuests, onChange: (f) => listeners.push(f), openTasks: () => openPage('tasks'), tokens: () => S.tokens, spend: (n) => { if (S.tokens < n) return false; S.tokens -= n; saveS(); refresh(); return true; }, rerender: () => { if ($('#shop').classList.contains('active')) renderShop(); } };
   LP.applyLook = apply;
   LP.hatDebug = { hatPos, HATS, PIECES, skinOf };
   apply();

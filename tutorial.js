@@ -18,20 +18,29 @@
 
   const TOURS = {
     menu: [
-      { t: 'Welcome to Local Pieces', d: 'A quick tour of where everything is. It only takes a moment, and you can skip it any time.' },
-      { sel: '#acct', t: 'Your profile', d: 'Tap here to set your name and picture and to see your ratings. Your rating changes when you play the computer.' },
+      { t: 'Welcome to Local Pieces v2.0', d: 'Tutorial is highly recommended. It shows where everything is, including things you would otherwise only find by accident. It only takes a minute, and you can skip it any time.' },
+      { sel: '#acct', t: 'Your profile', d: 'Tap here to set your name, picture, a bio and a custom background that other players see on your profile. You can also switch comments off, and replay this tutorial from here.' },
+      { sel: '#on-tab', t: 'Online Now', d: 'Shows how many players are online. Tap it to open the players list: a green dot means online, and you can watch live games. Tap anyone to open their profile (stats, comments, Add friend, Challenge).' },
+      { sel: '#settings-btn', t: 'Settings', d: 'Turn legal move hints, move labels (Brilliant, Blunder and so on), board auto-flip and premoves on or off.' },
       { sel: '#news-btn', t: 'Update log', d: 'See what changed in each update, with the date. A red dot shows when there is something new.' },
-      { sel: '#settings-btn', t: 'Settings', d: 'Turn legal move hints, move labels (Brilliant, Blunder and so on) and board auto-flip on or off.' },
-      { sel: () => document.querySelector('.mgrp[data-g="global"] .mgrp-h'), t: 'Menu sections', d: 'The menu is split into sections. Tap a section title to open or close it.' },
-      { sel: () => document.querySelector('.mgrp[data-g="global"]'), t: 'Play online', d: 'Online Chess lets you play a friend on another device, timed or unlimited, with a code you share. When a game ends, Rematch starts a new one after a 3 second countdown with the colours swapped. Puzzle Battle is a 3 minute race on the same puzzles: highest score wins, and it ends early if one player is out of lives and the other is ahead. Leaderboards ranks every player.' },
-      { sel: () => document.querySelector('.mode[data-mode="basic"]'), t: 'Classic', d: 'Normal chess with no clock, against a friend on one screen or against the computer at five levels. While it is your opponent\'s turn you can queue premoves (also online): tap a piece and a square, tap anywhere else to cancel them.' },
-      { sel: () => [document.querySelector('.mode[data-mode="bullet"]'), document.querySelector('.mode[data-mode="rapid"]')], t: 'Bullet and Rapid', d: 'Timed chess. Bullet is 1 or 3 minutes each. Rapid is 5 or 10 minutes each, with 2 extra seconds every move.' },
-      { sel: () => document.querySelector('.mgrp[data-g="custom"]'), t: 'Variants', d: 'Secret Queen hides a queen in your army. Air Hockey is queens against queens with a puck, first to 7.' },
-      { sel: () => document.querySelector('.mgrp[data-g="puzzles"]'), t: 'Puzzles', d: 'Puzzles give you a fresh challenge every time and Popular Puzzles are famous positions. Puzzle Rush gives you three lives to solve as many as you can, getting harder as you go, Capture Rush is a race to capture, and Solo Chess is 30 capture puzzles against the clock.' },
-      { sel: () => document.querySelector('.mgrp[data-g="analysis"]'), t: 'Analysis', d: 'Analyze reviews your saved games like a lesson, with a chance to try again from your mistakes. Match History replays your last 50 games, and the Position Editor sets up any position to play or save.' },
-      { sel: () => document.querySelector('.mgrp[data-g="rewards"]'), t: 'Tasks and the Shop', d: 'Finish daily and weekly tasks to earn tokens, then spend them on crates in the Shop for new boards, pieces and accessories.' },
-      { sel: () => document.querySelector('.mgrp[data-g="progress"]'), t: 'Stats', d: 'Your ratings, results, puzzle streaks and records, plus your personal records.' },
-      { t: 'You are ready', d: 'Leave a game halfway and "Continue playing" appears at the top. Finish a game and tap Analyze game to save it and learn from it. You can replay this tour from your profile.' },
+      { sel: '#m2-side', t: 'The sidebar', d: 'Everything lives in the sidebar: Home, Classic, Puzzles, Variants, Currency, Leaderboards, Analysis and Discussion. Hover (or press and hold) an icon for a description. A red or gold dot on an icon means something is waiting.' },
+      { sel: '#m2-daily', pre: () => LP.menuPane('home'), t: 'Daily Reward and day streak', d: 'Play for 10 minutes in a day to earn a reward: tokens and sometimes a free crate. When it is ready you will be asked when you open the app or return to the menu, and you can claim it once per day. The flame is your day streak: finish at least one game every day to grow it. Miss a whole day and it resets.' },
+      { sel: '#m2-cont', t: 'Continue Playing', d: 'Leave a game halfway and it appears here (up to 5), with a picture of the board, whose turn it is, who you are playing and when the last move was. Tap a card to carry on.' },
+      { sel: '#m2-fr', t: 'Friends', d: 'Add friends from their profile (from Online Now, a leaderboard, a comment or the Friends list). A green dot shows who is online. Open Friends to accept requests, challenge them, view their profile or send a message. A red dot means a new request or message.' },
+      { sel: '#m2-hist', t: 'Game History', d: 'Your recent matches: the mode, who you played (a bot or a player, with their Elo), and a W, L or D. Your accuracy shows once you have analysed the game. Tap a row to watch the replay.' },
+      { sel: '.m2-si[data-p="classic"]', pre: () => LP.menuPane('classic'), t: 'Classic', d: 'Untimed and timed chess. Everything starts here.' },
+      { sel: '#m2-time', t: 'Time type', d: 'Pick Untimed, Super Bullet (10.1 seconds plus 0.1 per move, and it counts towards your Bullet rating), Bullet or Rapid.' },
+      { sel: '#m2-playbtn', t: 'Play', d: 'One Play button: choose Local (two players on this device), Online (create a game, join with a code or pick an open game) or Bot (Dumb up to Stockfish). Online games let you queue premoves and chat.' },
+      { sel: '.m2-si[data-p="puzzles"]', pre: () => LP.menuPane('puzzles'), t: 'Puzzles', d: 'Puzzles, Popular, Community Puzzles, Puzzle Rush, Capture Rush, Solo Chess and Puzzle Battle (two players, same puzzles). Rush lives here.' },
+      { sel: '.m2-si[data-p="variants"]', pre: () => LP.menuPane('variants'), t: 'Variants', d: 'Custom gamemodes (Chess960, 3-Check, King of the Hill, Atomic, Horde, Racing Kings), Secret Queen, Immortal Snail, Gamblite, Guess Who, Chess Royale and Air Hockey.' },
+      { sel: '.m2-si[data-p="currency"]', pre: () => LP.menuPane('currency'), t: 'Currency', d: 'Finish daily and weekly tasks to earn tokens, then spend them on crates in the Shop for boards, pieces and backgrounds. You can even design your own board.' },
+      { sel: '.m2-si[data-p="leaderboards"]', pre: () => LP.menuPane('leaderboards'), t: 'Leaderboards and Stats', d: 'Global rankings (Elo, win streak, Puzzle Rush, Day streak and more): tap any player to open their profile. Stats shows your results by opponent, move quality from analysed games and your records.' },
+      { sel: '.m2-si[data-p="analysis"]', pre: () => LP.menuPane('analysis'), t: 'Analysis', d: 'Analyze reviews a finished game like a lesson. Match History replays your last 50 games, and the Position Editor sets up any position to play or save.' },
+      { sel: '.m2-si[data-p="learn"]', t: 'Learn', d: 'Chess lessons on a winding path. Use the thin arrows to move between topics, tap a pad to see its 10 levels, and finish each level to unlock the next. Redo the first tutorial lesson from the button at the top.' },
+      { sel: '.m2-si[data-p="mistakes"]', t: 'Mistake Training', d: 'Analyze a game and your blunders and mistakes come back here as quick puzzles. Find a better move twice to clear each one and earn tokens. Keep a daily streak going.' },
+      { sel: '.m2-si[data-p="discussion"]', t: 'Discussion', d: 'Two tabs: Feedback to send ideas and bug reports (you earn tokens), and Global Chat to talk with everyone online.' },
+      { t: 'Profile comments', d: 'Every profile has a Comments tab where you can leave a message. If you do not want comments on yours, switch them off in your profile and you can still delete any comment you already have.' },
+      { t: 'You are ready', pre: () => LP.menuPane('home'), d: 'Finish a game and tap Analyze game to save it and learn from it. You can replay this tutorial any time from your profile.' },
     ],
     game: [
       { sel: '#board', t: 'The board', d: 'Tap a piece to see where it can go, then tap a square to move. Dots show the legal moves.' },
@@ -39,6 +48,7 @@
       { sel: '#status', t: 'Status', d: 'Whose turn it is, and messages such as check, checkmate or a draw.' },
       { sel: '#controls', t: 'Controls', d: 'Flip turns the board around. Back and Forward step through the moves (Sandbox has real Undo and Redo). New game starts over. Some modes add Hint, Pause and more.' },
       { sel: () => { const s = $('#game .side'); return s && s.getBoundingClientRect().width > 0 ? s : $('#move-list'); }, t: 'Moves', d: 'Every move is listed here. When move labels are on, each move gets a mark like Brilliant, Good or Blunder.' },
+      { t: 'Online games and more', d: 'In online games there is a Chat tab beside Moves with quick messages, and you can queue premoves by moving while it is your opponent\'s turn. You can drag pieces too. Finish a game and use Analyze game to review it.' },
     ],
     puzzle: [
       { sel: '#pz-board', t: 'The puzzle', d: 'White always moves first. Make your move on the board.' },
@@ -55,10 +65,10 @@
     root.id = 'tut';
     root.className = 'tut';
     root.innerHTML = '<div class="tut-block"></div><div class="tut-hole"></div>' +
-      '<div class="tut-card" role="dialog" aria-live="polite"><div class="tut-step"></div><h3></h3><p></p>' +
+      '<div class="tut-card" role="dialog" aria-live="polite"><div class="tut-bar"><i></i></div><img class="tut-mascot" alt=""><div class="tut-step"></div><h3></h3><p></p>' +
       '<div class="tut-dots"></div><div class="tut-btns"><button class="btn tut-skip">Skip</button><button class="btn tut-back">Back</button><button class="btn primary tut-next">Next</button></div></div>';
     document.body.appendChild(root);
-    ui = { root, hole: root.querySelector('.tut-hole'), card: root.querySelector('.tut-card'), step: root.querySelector('.tut-step'), h: root.querySelector('h3'), p: root.querySelector('p'), dots: root.querySelector('.tut-dots'),
+    ui = { mas: root.querySelector('.tut-mascot'), bar: root.querySelector('.tut-bar i'), root, hole: root.querySelector('.tut-hole'), card: root.querySelector('.tut-card'), step: root.querySelector('.tut-step'), h: root.querySelector('h3'), p: root.querySelector('p'), dots: root.querySelector('.tut-dots'),
       skip: root.querySelector('.tut-skip'), back: root.querySelector('.tut-back'), next: root.querySelector('.tut-next') };
     ui.skip.onclick = () => finish(true);
     ui.back.onclick = () => go(run.i - 1);
@@ -113,10 +123,12 @@
     dir = dir || (i < run.i ? -1 : 1);
     i = Math.max(0, Math.min(steps.length - 1, i));
     // skip steps whose target is not on screen (for instance a hidden panel)
+    if (steps[i].pre) { try { steps[i].pre(); } catch (e) { /* ignore */ } }
     while (steps[i].sel && !visible(targetOf(steps[i]))) {
       const nx = i + dir;
       if (nx < 0 || nx >= steps.length) { i = dir > 0 ? steps.length - 1 : 0; break; }
       i = nx;
+      if (steps[i].pre) { try { steps[i].pre(); } catch (e) { /* ignore */ } }
     }
     run.i = i;
     const st = steps[i];
@@ -126,6 +138,8 @@
     ui.step.textContent = (i + 1) + ' of ' + steps.length;
     ui.h.textContent = st.t;
     ui.p.textContent = st.d;
+    ui.mas.src = 'lp-mascot-' + (i === 0 || i === steps.length - 1 ? 'happy' : 'think') + '.png';
+    ui.bar.style.width = Math.round(((i + 1) / steps.length) * 100) + '%';
     ui.dots.innerHTML = steps.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('');
     ui.back.classList.toggle('hidden', i === 0);
     ui.next.textContent = i >= steps.length - 1 ? 'Done' : 'Next';
@@ -140,6 +154,7 @@
     const askLesson = run.part === 'menu';
     if (skipped && run.part === 'menu') { mark('game'); mark('puzzle'); }    // skipping the first tour skips the rest too
     run = null;
+    if (LP.menuPane) LP.menuPane('home');
     if (ui) { ui.root.classList.remove('on'); }
     document.body.classList.remove('tut-open');
     if (LP.lesson && LP.lesson.ask && askLesson) setTimeout(() => LP.lesson.ask(), 450);   // the app tour is over: ask if this is a first game of chess

@@ -172,7 +172,8 @@
   /** A private copy of a position so analysing never touches the real game. Keeps Secret Queen state (nothing hidden). */
   function clone(g) {
     const c = new Chess();
-    c.mode = g.mode === 'secret' ? 'secret' : 'basic';
+    c.mode = g.mode === 'secret' ? 'secret' : g.mode === 'c960' || g.mode === 'fen' ? g.mode : 'basic';   // Chess960 and Custom position keep their rules
+    if (c.mode === 'c960' || c.mode === 'fen') { c.vm = true; c.vp = g.vp; c.kf = g.kf; c.rfK = g.rfK; c.rfQ = g.rfQ; }
     c.board.set(g.board);
     c.turn = g.turn; c.castling = g.castling; c.ep = g.ep; c.halfmove = g.halfmove; c.fullmove = g.fullmove;
     if (g.secretQueen) c.secretQueen = { [WHITE]: g.secretQueen[WHITE], [BLACK]: g.secretQueen[BLACK] };
@@ -185,7 +186,7 @@
     const c = new Chess();
     c.mode = 'basic';
     c.board.set(g.board);
-    c.turn = g.turn; c.castling = g.castling; c.ep = g.ep; c.halfmove = g.halfmove; c.fullmove = g.fullmove;
+    c.turn = g.turn; c.castling = g.mode === 'c960' ? 0 : g.castling; c.ep = g.ep; c.halfmove = g.halfmove; c.fullmove = g.fullmove;
     c.history = [];
     return c;
   }

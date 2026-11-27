@@ -131,7 +131,7 @@
     }
 
 
-    return { load, analyse, pickMove, stop, newGame, legalOf, alg, available: () => state === 'ready', failed: () => state === 'failed', loading: () => state === 'loading', MATE, name: cfg.name };
+    return { name: cfg.name, load, analyse, pickMove, stop, newGame, legalOf, alg, available: () => state === 'ready', failed: () => state === 'failed', loading: () => state === 'loading', MATE, name: cfg.name };
   }
 
   LP.Stockfish = make({ url: 'stockfish.js', wasm: 'stockfish.wasm', hash: 32, timeout: 15000, name: 'Stockfish Lite' });

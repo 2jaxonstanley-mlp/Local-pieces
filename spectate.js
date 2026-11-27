@@ -17,6 +17,7 @@
 
   async function watch(pl, name, back) {
     if (!pl || !pl.id || !N() || !N().url()) { toast('That game cannot be watched.'); return; }
+    if (pl.k === 'live') { stop(); if (LP.live) LP.live.watch(pl, name, back || 'menu'); return; }   // modes with no move list: variants, rushes, puzzles, hockey
     stop();
     const my = (cur = { k: pl.k === 'bot' ? 'bot' : 'game', id: pl.id, u: '', back: back || 'menu', opened: false, fails: 0 });
     const first = await N().get({ a: 'spec', k: my.k, id: my.id });
@@ -60,5 +61,5 @@
     return back;
   }
 
-  LP.spectate = { watch, stop };
+  LP.spectate = { watch, stop, cur: () => (cur && cur.opened ? { k: cur.k, id: cur.id } : null) };
 })();

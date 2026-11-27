@@ -115,7 +115,21 @@
     }
   }
 
+  /* a picture of the puzzle board for people watching from the player list (live.js). Only the position: no solution is ever sent. */
+  function livePz() {
+    const L = window.LP && window.LP.live;
+    const ap = document.querySelector('.page.active');
+    if (!L || !g || !g.board || !ap || ap.id !== 'puzzle') return;
+    const X = window.LP.liveExtra || {};
+    L.push('puzzle', X.label || 'Solving puzzles', () => {
+      const b = [];
+      for (let r = 7; r >= 0; r--) for (let f = 0; f < 8; f++) { const p = g.board[r * 16 + f]; b.push(p ? ((p & 24) === 8 ? 'PNBRQK' : 'pnbrqk')[(p & 7) - 1] : '.'); }
+      const ix = (s) => (7 - (s >> 4)) * 8 + (s & 7), x = window.LP.liveExtra || {};
+      return { b: b.join(''), lm: last ? [ix(last[0]), ix(last[1])] : null, fl: 0, ttl: ($('#pz-title') || {}).textContent || 'Puzzle', st: state === 'analysis' ? '' : (($('#pz-status') || {}).textContent || '').slice(0, 80), hud: x.hud || '', opp: x.opp || '' };
+    }, 800);
+  }
   function render() {
+    livePz();
     const legal = new Set(targets.map((m) => m.to));
     const side = state === 'analysis' ? g.turn : 0x10;
     const chk = state !== 'gen' && g.inCheck(side) ? g.kingSquare(side) : -1;

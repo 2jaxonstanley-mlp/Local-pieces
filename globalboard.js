@@ -77,12 +77,20 @@
     ['hs', 'Hardest puzzle', 'Puzzle Rush: hardest puzzle solved', 'The rating of the hardest puzzle solved in a Puzzle Rush run.', 'rating'],
     ['brill', 'Brilliant moves', 'Most brilliant moves found', 'Brilliant moves found in your Analyze reviews.', 'brilliant'],
     ['best', 'Best moves', 'Most best moves found', 'Best moves found in your Analyze reviews.', 'best moves'],
+    ['streak', 'Day streak', 'Day streak', 'Consecutive days with at least one finished game. Miss a whole day and it resets to 0.', 'days'],
     ['secs', 'Time played', 'Most time played', 'Total time spent playing on this device.', 'played'],
   ];
   let board = 'elo', token = 0;
   const fmtT = (s) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return h ? h + 'h ' + m + 'm' : Math.max(1, m) + 'm'; };
   const fmtV = (b, v) => (b === 'secs' ? fmtT(v) : String(v));
   const av = (src, name) => (src ? `<span class="gl-av" style="background-image:url(${src})"></span>` : `<span class="gl-av">${esc((name || '?')[0].toUpperCase())}</span>`);
+
+  /** The day-streak board comes from the daily reward tables (SQL file 18). */
+  async function streakBoard() {
+    const r = await N().get({ a: 'stlb', day: LP.daily ? LP.daily.today() : '' });
+    if (!r || r.error || !r.rows) return r;
+    return { top: r.rows.map((e, i) => ({ rank: i + 1, id: e.id, name: e.name, pfp: e.pfp, value: e.streak, you: e.id === pid })), total: r.rows.length, me: null };
+  }
 
   function render(chips, body) {
     const my = ++token;
@@ -97,7 +105,7 @@
     const B = BOARDS.find((b) => b[0] === board);
     body.innerHTML = `<h2 class="gl-title">${esc(B[2])}</h2><p class="lb-hint gl-info">What it measures: ${esc(B[3].charAt(0).toLowerCase() + B[3].slice(1))}</p>` +
       '<div id="gl-list"><p class="lb-hint">Loading…</p></div>';
-    syncStats().then(() => N().get({ a: 'lbget', board, pid })).then((r) => {
+    syncStats().then(() => (board === 'streak' ? streakBoard() : N().get({ a: 'lbget', board, pid }))).then((r) => {
       if (my !== token) return;
       const box = body.querySelector('#gl-list');
       if (!box) return;

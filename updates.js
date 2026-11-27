@@ -9,6 +9,105 @@
   const LP = (window.LP = window.LP || {});
   LP.UPDATES = {
     log: [
+    { id: 'u36', date: '2026-11-28', title: 'New piece set: Kirikun-sily', items: [
+      'Kirikun-sily is a new Epic piece set: cute cream pieces with sunglasses, smiles and a dark set for Black. Find it in the piece crate',
+    ] },
+    { id: 'u35', date: '2026-11-27', title: 'Reactions, Puzzle of the Day, quicker challenges', items: [
+      'Live reactions: in online games tap an emoji at any time and it floats over your opponent\'s board',
+      'Puzzle of the Day on Home: the same Popular puzzle for everyone, 10 tokens for solving it, a day streak and how many players solved it today',
+      'Challenges: a Challenge button on every friend (online or not) and "Same as last time" to resend your last game type',
+    ] },
+    { id: 'u34', date: '2026-11-27', title: 'Mistake Training and polish', items: [
+      'New Mistake Training page: the blunders and mistakes from your analysed games come back as puzzles. Find a better move twice to clear one (5 tokens each) and keep a daily streak',
+      'Learn: a Next lesson card and bronze, silver and gold badges on each topic (3, 6 and 10 levels done)',
+      'The board pulses on captures, glows on check and bursts with confetti when you win (follows the Animations setting); buttons press in',
+      'The tutorial now has a progress bar and a mascot, plus a Mistake Training step',
+    ] },
+    { id: 'u33', date: '2026-11-27', title: 'Learn: every course is here', items: [
+      'All 11 Learn topics now have 10 levels: Develop pieces, Defending pieces, Defending the king, Castling, En passant, Promotion, Hanging piece, Forks, Pins, Skewer and Checkmate',
+      'New look for the Learn page: discs with a picture standing on them and your progress beside each one',
+      'Promotion puzzles let you choose the new piece, and en passant puzzles start with the bot jumping a pawn two squares',
+    ] },
+    { id: 'u32', date: '2026-11-26', title: 'Learn: chess lessons', items: [
+      'New Learn section in the sidebar: a winding path of topics with thin left and right arrows to move between them. Each topic has 10 levels that unlock in order and shows how many you have completed',
+      'Forks course is ready: what a fork is, examples, then puzzles from knight forks to the final test. Pins, Skewers, Hanging pieces, Castling, En passant, Promotion, Basics and Checkmates are coming',
+      'Finish all 10 levels of a topic for 30 tokens. Redo the original tutorial lesson from the button on the Learn page',
+    ] },
+    { id: 'u31', date: '2026-11-26', title: 'Updated tutorial', items: [
+      'The tutorial now covers the new menu, Super Bullet, Online Now, friends, the daily reward and day streak, profile bio, background and comments, and where to open other players\u2019 profiles',
+      'Tutorial is highly recommended: replay it any time from your profile',
+    ] },
+    { id: 'u30', date: '2026-11-26', title: 'Daily rewards and day streaks', items: [
+      'Daily Reward: play 10 minutes in a day and claim tokens (more with a longer streak) plus a small chance of a free crate. It shows on Home and pops up when you open the app or return to the menu',
+      'Day streak: finish at least one game every day to build it. Miss a whole day and it resets',
+      'Your current streak shows on your profile and on other players\u2019 profiles, and there is a new Day streak board in Leaderboards',
+    ] },
+    { id: 'u29', date: '2026-11-26', title: 'Friends and profile customisation', items: [
+      'Friends: add players from their profile, accept or decline requests, see who is online with a green dot, challenge, view profile or message them',
+      'Home shows your friends and how many are online; a red dot appears when you have a request or an unread message',
+      'Profiles now have a bio and a custom background that other players can see',
+      'You can turn off comments on your profile; other players then cannot read or leave comments',
+    ] },
+    { id: 'u28', date: '2026-11-25', title: 'Local Pieces v2.0: new main menu', items: [
+      'New left sidebar: Home, Classic, Puzzles, Variants, Currency, Leaderboards, Analysis and Discussion (hover an icon for a description)',
+      'Home shows Continue Playing (up to 5 games, with board picture, turn and opponent) and Game History with W/L and accuracy once a game is analysed',
+      'Classic now has a Time type dropdown (Untimed, Super Bullet, Bullet, Rapid) and one Play button: Local, Online or Bot',
+      'Feedback is now Discussion with two tabs: Feedback and Global Chat',
+      'Online Now sits in the top bar; Hockey is under Variants and Rush under Puzzles',
+    ] },
+    { id: 'u27', date: '2026-11-25', title: 'Super Bullet and better stats', items: [
+      'New time control: Super Bullet (10.1s + 0.1s), in Classic (local and online) and sharing your Bullet rating',
+      'Move quality in Stats now shows every rating (Brilliant, Great, Best, Inaccuracy, Mistake, Blunder and more) from your analysed games',
+      'By opponent now lists CopyCat, Patricia, Mr. Brilliant, Stockfish Lite, Stockfish and every level with wins, losses and draws',
+    ] },
+    { id: 'u26', date: '2026-11-25', title: 'Your own board', items: [
+      'New legendary in the Board Crate: Your Own Board',
+      'Draw the light and the dark square pixel by pixel (16 x 16 or 32 x 32) with draw, erase, fill and pick tools',
+      'Or pick a picture, drag and zoom to crop it, and it becomes the squares',
+      'It is private: saved on this device only, and you can edit or remove it any time',
+    ] },
+    { id: 'u25', date: '2026-11-25', title: 'Custom gamemodes', items: [
+      'New: Custom under Play online, with the same Create, Join and Open games screens as Online',
+      'Gamemodes: Chess960, 3-Check, King of the Hill, Atomic, Horde, Racing Kings and Custom position (paste a FEN)',
+      'Some modes have settings: the Chess960 start position (0 to 959, or random), the number of checks, the starting FEN',
+      'Clocks, premoves, resign, draw offers, rematches, spectating and joining by code or from the list all work in every gamemode',
+      'Play them against the computer or a friend on one device too. Custom games do not change your Elo',
+    ] },
+    { id: 'u24', date: '2026-11-24', title: 'Watch every mode live', items: [
+      'New: you can now watch players live in Secret Queen, Gamblite, Chess Royale, Immortal Snail, 2-player games and puzzle games, not just Classic',
+      'New: watch Capture Rush, Puzzle Rush, Puzzle Battle, puzzles and Air Hockey from the Players list. Look for the Watch button',
+      'Secrets stay secret: the Secret Queen stays a pawn for spectators until it is revealed',
+      'Spectators see the position, scores, lives and clocks, never the puzzle solution',
+      'Turn it off any time with Settings > Allow spectators',
+    ] },
+    { id: 'u23', date: '2026-11-24', title: 'Global Chat and In-Game Chat', items: [
+      'New: Global Chat under Play online. Talk to everyone, tap a name to open their profile. Messages last 5 minutes, the newest 50 show, and it refreshes every 6 seconds',
+      'New: Chat tab next to Moves in online games, and when you spectate one. Quick messages (Good luck, ggs, Rematch? and more) and a red dot for new messages',
+      'New: 12 piece stickers (6 pieces, both colours) in every chat, drawn in your board colours',
+      'New: one message every few seconds to stop spam',
+      'New: challenge notifications now have Accept, Decline and Challenge back buttons',
+    ] },
+    { id: 'u22', date: '2026-11-24', title: 'Quests in your game', items: [
+      'New: a small Quests bar at the top of the game panel shows your unfinished daily and weekly quests while you play. Tap it to open the list with live progress',
+      'Capture quests move on every capture. Play and win quests move when the game ends',
+      'It only shows quests that game can move (online quests in online games, Secret Queen quests in Secret Queen) and hides in Sandbox',
+      'Tap a quest to jump to the Tasks page (it asks first, because that leaves the game)',
+    ] },
+    { id: 'u21', date: '2026-11-24', title: 'Notifications and profile comments', items: [
+      'New: a bell next to Settings on the main menu with an unread badge. It lists challenges you receive, quests you complete and new comments on your profile. Tap one to jump to it',
+      'New: Mark all read and Clear all in the Notifications page',
+      'New: a Comments tab on every player profile. Write up to 280 characters, newest first, 10 at a time with Load more',
+      'New: you can delete any comment on your own profile, and your own comments anywhere',
+    ] },
+    { id: 'u20', date: '2026-11-23', title: 'Hint upgrades, Open 3×, Suggestions and tidy-ups', items: [
+      'New: Sandbox Hint shows the score of each move in chips, draws a green arrow for the best move, and labels the engine and depth. Press Hint again for the top 3, and a third time to clear it',
+      'New: when the hint finds a forced mate, numbered orange arrows appear one by one so the idea is easy to follow',
+      'New setting: Sandbox hint style. Minimal shows only the best move, Numbers + arrow is the new step-by-step hint, Full shows the top 3 at once',
+      'New: Open 3× in the Shop opens three crates in a row for three times the price and shows all three rewards together. Tap one to equip it',
+      'New: Community Puzzles is also in Play online, with a small badge for puzzles made this week',
+      'Suggestions now send straight from the game with an optional screenshot and pay 3 tokens once a day. The GitHub link is gone',
+      'Settings: the board colour picker is gone. Your equipped board from the Shop decides the colours',
+    ] },
     { id: 'u19', date: '2026-11-22', title: 'Big Stockfish', items: [
       'The big Stockfish is back as its own bot (About 3500). Its 99 MB engine downloads once the first time you use it, then your browser keeps it',
       'Settings, Engine and analysis: choose the small or the big Stockfish for Analyze and the Sandbox hint',

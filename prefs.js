@@ -1,5 +1,5 @@
 /**
- * Preferences: sound, animations, board colours, warnings, quick rematch, keyboard shortcuts and the choices you made last time.
+ * Preferences: sound, animations, warnings, quick rematch, keyboard shortcuts and the choices you made last time.
  * Everything is saved on this device and loaded before the first screen. Settings has the switches (profile.js calls LP.prefs.rows / bind).
  */
 (() => {
@@ -8,10 +8,13 @@
   if (!LP) return;
   const $ = (s) => document.querySelector(s);
   const KEY = 'localPieces.prefs';
-  const DEF = { sound: true, volume: 0.6, anim: true, warn: true, quick: true, shortcuts: true, premove: true, spectate: true, light: '', dark: '', haptic: false, autoq: false, input: 'both', newsPopup: true, preGhost: true, annot: true, nolast: false, nocoords: false, notation: 'san', engine: 'lite', depth: 'normal', cb: false, hc: false, big: false, last: {} };
+  const DEF = { sound: true, volume: 0.6, anim: true, warn: true, quick: true, shortcuts: true, premove: true, spectate: true, hintStyle: 'num', haptic: false, autoq: false, input: 'both', newsPopup: true, preGhost: true, annot: true, nolast: false, nocoords: false, notation: 'san', engine: 'lite', depth: 'normal', cb: false, hc: false, big: false, last: {} };
   let P = Object.assign({}, DEF, { last: {} });
   try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && typeof s === 'object') P = Object.assign(P, s, { last: Object.assign({}, s.last || {}) }); } catch (e) { /* ignore */ }
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(P)); } catch (e) { /* ignore */ } };
+  const hadOld = 'light' in P || 'dark' in P;
+  delete P.light; delete P.dark;   // the old board colour picker is gone; the equipped Shop board decides the look
+  const save = () => { delete P.light; delete P.dark; try { localStorage.setItem(KEY, JSON.stringify(P)); } catch (e) { /* ignore */ } };
+  if (hadOld) save();
 
   const prefs = {
     get: (k) => P[k],
@@ -20,16 +23,6 @@
     /** Remember what you picked last time (computer level, clock, players...). */
     remember(k, v) { P.last[k] = v; save(); },
     last: (k) => P.last[k],
-    /** Custom board colours replace whatever board is equipped. */
-    look() {
-      const r = document.documentElement.style;
-      if (!P.light && !P.dark) return;
-      if (P.light) r.setProperty('--light-sq', P.light);
-      if (P.dark) r.setProperty('--dark-sq', P.dark);
-      r.setProperty('--light-img', 'none');
-      r.setProperty('--dark-img', 'none');
-      document.body.dataset.bd = '';
-    },
   };
   LP.prefs = prefs;
 
@@ -163,12 +156,10 @@
   /* ------------------------------------------------------------------ Settings rows (profile.js puts these in its sheet) */
   const row = (id, label, sub, on) => '<label class="set-row" for="' + id + '"><span class="set-tx"><b>' + label + '</b><small>' + sub + '</small></span><input type="checkbox" id="' + id + '" class="set-check"' + (on ? ' checked' : '') + '></label>';
   const seg = (key, label, sub, opts) => '<div class="set-row col"><span class="set-tx"><b>' + label + '</b><small>' + sub + '</small></span><div class="seg" data-seg="' + key + '">' + opts.map((o) => '<button type="button" data-v="' + o[0] + '"' + (String(P[key]) === o[0] ? ' class="on"' : '') + '>' + o[1] + '</button>').join('') + '</div></div>';
-  const PRESETS = [['Classic', '#eeeed2', '#769656'], ['Night', '#8d9db3', '#3b4a63'], ['Mint', '#e3f2e9', '#5fae8a'], ['Sand', '#f0e1c5', '#b58863'], ['Rose', '#f6e3e8', '#c4768c'], ['Ice', '#e8f1f7', '#6f9bbd']];
   /** Which saved values each group resets to default. */
   const GROUPS = {
     sound: { t: 'Sound and motion', keys: ['sound', 'volume', 'anim', 'haptic'], open: true },
-    board: { t: 'Board colours', keys: ['light', 'dark'], open: true },
-    games: { t: 'Games', keys: ['warn', 'spectate', 'premove', 'preGhost', 'annot', 'quick', 'shortcuts', 'input', 'autoq', 'newsPopup'], open: true },
+    games: { t: 'Games', keys: ['warn', 'spectate', 'premove', 'preGhost', 'annot', 'hintStyle', 'quick', 'shortcuts', 'input', 'autoq', 'newsPopup'], open: true },
     moves: { t: 'Move display', keys: ['nolast', 'nocoords', 'notation'], open: false },
     engine: { t: 'Engine and analysis', keys: ['engine', 'depth'], open: false },
     access: { t: 'Accessibility', keys: ['cb', 'hc', 'big'], open: false },
@@ -181,10 +172,6 @@
       '<label class="set-row col"><span class="set-tx"><b>Volume</b></span><input type="range" id="pf-vol" min="0" max="100" value="' + Math.round(P.volume * 100) + '" class="set-range"></label>' +
       row('pf-anim', 'Animations', 'Pieces slide and menus fade. Turn off for instant moves.', P.anim) +
       row('pf-haptic', 'Vibration', 'A small buzz on moves, captures and check (phones that support it).', P.haptic)) +
-    grp('board',
-      '<div class="set-preview" id="pf-prev" aria-hidden="true">' + [0, 1, 2, 3, 4, 5, 6, 7].map((i) => '<i class="' + (i % 2 ? 'd' : 'l') + '"></i>').join('') + '</div>' +
-      '<div class="set-colors"><label>Light squares <input type="color" id="pf-light" value="' + (P.light || '#eeeed2') + '"></label><label>Dark squares <input type="color" id="pf-dark" value="' + (P.dark || '#769656') + '"></label><button class="btn" id="pf-creset" type="button">Use equipped board</button></div>' +
-      '<div class="seg presets">' + PRESETS.map((p, i) => '<button type="button" data-pre="' + i + '"><i style="background:linear-gradient(90deg,' + p[1] + ' 50%,' + p[2] + ' 50%)"></i>' + p[0] + '</button>').join('') + '</div>') +
     grp('games',
       row('pf-warn', 'Warn before replacing a saved game', 'When all 5 save slots are full, ask before the oldest is replaced.', P.warn) +
       row('pf-spectate', 'Allow spectators', 'Other players can watch your games from the player list (online games and games against the computer). Turn this off to keep them private.', P.spectate) +
@@ -194,6 +181,7 @@
       row('pf-quick', 'Quick rematch', 'Show a Rematch button as soon as a game ends.', P.quick) +
       row('pf-keys', 'Keyboard shortcuts', 'N new game, R rematch, U undo, Y redo, F flip, H hint, P pause, M mute, ? help.', P.shortcuts) +
       row('pf-autoq', 'Always promote to a queen', 'Skip the piece choice when a pawn reaches the end.', P.autoq) +
+      seg('hintStyle', 'Sandbox hint style', 'Minimal shows only the best move. Numbers + arrow shows the best move, then the top 3 when you press Hint again. Full shows the top 3 at once.', [['min', 'Minimal'], ['num', 'Numbers + arrow'], ['full', 'Full']]) +
       seg('input', 'Moving pieces', 'Tap a piece then a square, or also drag it.', [['both', 'Tap and drag'], ['tap', 'Tap only']]) +
       row('pf-news', 'Show what\'s new after an update', 'A small card with the highlights the first time you open the game after an update.', P.newsPopup)) +
     grp('moves',
@@ -228,14 +216,6 @@
     on('pf-annot', (e) => prefs.set('annot', e.target.checked));
     on('pf-news', (e) => prefs.set('newsPopup', e.target.checked));
     flag('pf-nolast', 'nolast'); flag('pf-nocoords', 'nocoords'); flag('pf-cb', 'cb'); flag('pf-hc', 'hc'); flag('pf-big', 'big');
-    // colours, with a live preview and presets
-    const paintPrev = () => { const p = $('#pf-prev'); if (p) { p.style.setProperty('--pl', P.light || '#eeeed2'); p.style.setProperty('--pd', P.dark || '#769656'); } };
-    paintPrev();
-    const col = (id, k) => { const e = $('#' + id); if (e) e.oninput = () => { prefs.set(k, e.value); if (LP.applyLook) LP.applyLook(); paintPrev(); }; };
-    col('pf-light', 'light'); col('pf-dark', 'dark');
-    const rs = $('#pf-creset');
-    if (rs) rs.onclick = () => { prefs.set('light', ''); prefs.set('dark', ''); $('#pf-light').value = '#eeeed2'; $('#pf-dark').value = '#769656'; if (LP.applyLook) LP.applyLook(); paintPrev(); };
-    document.querySelectorAll('[data-pre]').forEach((b) => { b.onclick = () => { const p = PRESETS[+b.dataset.pre]; prefs.set('light', p[1]); prefs.set('dark', p[2]); $('#pf-light').value = p[1]; $('#pf-dark').value = p[2]; if (LP.applyLook) LP.applyLook(); paintPrev(); }; });
     // segmented choices
     document.querySelectorAll('[data-seg]').forEach((g) => g.querySelectorAll('button').forEach((b) => {
       b.onclick = () => { prefs.set(g.dataset.seg, b.dataset.v); g.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); look2(); };
@@ -255,7 +235,7 @@
       const t = q.value.trim().toLowerCase();
       document.querySelectorAll('.set-grp').forEach((g) => {
         let any = false;
-        g.querySelectorAll('.set-row, .set-colors, .set-preview, .seg.presets, .set-btns, .note').forEach((r) => { const hit = !t || r.textContent.toLowerCase().includes(t) || (/colou?r|board|light|dark|preset/.test(t) && g.dataset.g === 'board'); r.classList.toggle('hidden', !hit); if (hit) any = true; });
+        g.querySelectorAll('.set-row, .set-btns, .note').forEach((r) => { const hit = !t || r.textContent.toLowerCase().includes(t); r.classList.toggle('hidden', !hit); if (hit) any = true; });
         g.classList.toggle('hidden', !any);
         if (t && any) g.open = true;
       });

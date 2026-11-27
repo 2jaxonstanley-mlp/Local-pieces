@@ -129,8 +129,24 @@
     if (LP.chessOnline && LP.chessOnline.toast) LP.chessOnline.toast('Published! Everyone can play it now.');
   }
 
-  const card = document.querySelector('.mode[data-mode="community"]');
-  if (card) card.addEventListener('click', () => LP.saves ? LP.saves.guard(open) : open());
+  // two entry points: Play online and Puzzles
+  document.querySelectorAll('.mode[data-mode="community"]').forEach((card) => card.addEventListener('click', () => (LP.saves ? LP.saves.guard(open) : open())));
+  /** A small "N new" badge: puzzles by other players from the last 7 days. Looked up when Play online or Puzzles is opened, at most every 30 minutes. */
+  let badgeAt = 0;
+  async function badge() {
+    if (!enabled() || Date.now() - badgeAt < 1800000) return;
+    badgeAt = Date.now();
+    const r = await N().get({ a: 'cmlist', pid: pid(), cat: '', sort: 'new' });
+    if (!r || r.error || !r.puzzles) { badgeAt = 0; return; }
+    const week = Date.now() - 7 * 86400000, n = r.puzzles.filter((p) => !p.mine && p.created > week).length;
+    document.querySelectorAll('.mode[data-mode="community"] .mode-name').forEach((el) => {
+      let b = el.querySelector('.mode-new');
+      if (!n) { if (b) b.remove(); return; }
+      if (!b) { b = document.createElement('em'); b.className = 'mode-new'; el.appendChild(b); }
+      b.textContent = n > 99 ? '99+ new' : n + ' new';
+    });
+  }
+  document.querySelectorAll('.mgrp[data-g="global"] .mgrp-h, .mgrp[data-g="puzzles"] .mgrp-h').forEach((h) => h.addEventListener('click', () => { setTimeout(badge, 0); }));
   const markDoneQ = (id) => { const first = !done()[String(id).replace(/^c-/, '')]; markDone(id); if (!first) return; try { if (window.LP.rewards) window.LP.rewards.event('community'); } catch (e) { /* ignore */ } };
   LP.community = { open, cats: CATS, done: markDoneQ, published, show: open };
 })();

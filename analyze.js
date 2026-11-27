@@ -25,7 +25,7 @@
   const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
   const cap1 = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  const ML = { basic: 'Classic', secret: 'Secret Queen', bullet: 'Bullet', rapid: 'Rapid' };
+  const ML = { c960: 'Chess960', fen: 'Custom position', basic: 'Classic', secret: 'Secret Queen', bullet: 'Bullet', rapid: 'Rapid' };
 
   /* ------------------------------------------------------------------ saved games */
   const all = () => LP.store.get();
@@ -54,21 +54,23 @@
     if (!e || !e.an || !e.an.plies || isRush(e)) return null;
     const mine = humanOf(e) ? [humanOf(e)] : ['w', 'b'];
     let b = 0, g = 0;
+    const q = {};
     Object.keys(e.an.plies).forEach((k) => {
       const i = +k, p = e.an.plies[k];
       if (!p || !mine.includes(i % 2 === 0 ? 'w' : 'b')) return;
+      if (p.r) q[p.r] = (q[p.r] || 0) + 1;
       if (p.r === 'brilliant') b++; else if (p.r === 'best') g++;
     });
-    return { b, g };
+    return { b, g, q };
   }
-  function countFound(e) { try { const f = foundIn(e); if (f && LP.stats && LP.stats.analysed) LP.stats.analysed(e.id, f.b, f.g); } catch (x) { /* ignore */ } }
+  function countFound(e) { try { const f = foundIn(e); if (f && LP.stats && LP.stats.analysed) LP.stats.analysed(e.id, f.b, f.g, f.q); } catch (x) { /* ignore */ } }
   const addSides = (an, sd) => { const set = new Set(an.sides || []); (sd === 'both' ? ['w', 'b'] : [sd]).forEach((c) => set.add(c)); an.sides = ['w', 'b'].filter((c) => set.has(c)); an.both = an.sides.length === 2; };
   const nMoves = (e) => (isRush(e) ? e.events.length : e.moves.length);
 
   /* ------------------------------------------------------------------ chess helpers */
   const EX = window.Explain, AC = window.AnalyzeCore;
   const TEACH = { inaccuracy: 1, mistake: 1, blunder: 1, missedwin: 1, missedmate: 1, throw: 1 };      // the ratings that get a "try to find the fix" step
-  const WV = '6';                                                              // version of the background analysis files (bump it to make browsers fetch them again)
+  const WV = '7';                                                              // version of the background analysis files (bump it to make browsers fetch them again)
 
   /** Who is talking about whom: "You left your pawn..." or "Alice left their pawn...". */
   function voice(e, color) {
@@ -151,7 +153,7 @@
     an.done = false;
     const idxs = [];
     e.moves.forEach((m, i) => { if (want(i) && !an.plies[i]) idxs.push(i); });
-    const job = { mode: e.mode, fen: e.fen || null, secrets: { w: e.secrets.w, b: e.secrets.b }, moves: e.moves, idxs, budget: 50000 };
+    const job = { mode: e.mode, vp: e.vp || null, fen: e.fen || null, secrets: { w: e.secrets.w, b: e.secrets.b }, moves: e.moves, idxs, budget: 50000 };
     if (idxs.length && job.mode === 'basic' && LP.engineChoice) await LP.engineChoice();   // the one-time Lite or Full question
     const SF = LP.analysisEngine ? LP.analysisEngine() : LP.Stockfish;
     const useSf = !!(idxs.length && SF && job.mode === 'basic' && await SF.load());   // Stockfish double-checks every move (Classic-style games only)
@@ -1510,7 +1512,7 @@
     const x = { v: XV, w: side(), b: side(), turn: null };
     let pcAt = null;
     try {   // the piece that made each move, from replaying the game
-      const g = AC.startPosition({ mode: e.mode, fen: e.fen || null, secrets: { w: e.secrets.w, b: e.secrets.b }, moves: e.moves });
+      const g = AC.startPosition({ mode: e.mode, vp: e.vp || null, fen: e.fen || null, secrets: { w: e.secrets.w, b: e.secrets.b }, moves: e.moves });
       pcAt = {};
       for (let i = 0; i < e.moves.length; i++) { const pc = g.board[e.moves[i].from]; pcAt[i] = pc ? pc & 7 : 0; g.makeMove(e.moves[i]); }
     } catch (err) { pcAt = null; }
@@ -1847,7 +1849,7 @@
     flipped = h === 'b';
     if (R.kind === 'chess') {
       R.G = new Chess();
-      R.G.mode = e.mode; R.G.reset();
+      R.G.mode = e.mode; R.G.vp = e.vp || null; R.G.reset();
       if (e.fen) R.G.loadFen(e.fen);
       R.G.secretQueen = { [WHITE]: e.secrets.w, [BLACK]: e.secrets.b };
       R.view = chessView(R.G);

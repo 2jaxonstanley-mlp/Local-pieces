@@ -52,6 +52,25 @@
 
   function setName(n) { P.name = String(n || '').trim().slice(0, 16); save(); render(); }
   function setPfp(dataUrl) { P.pfp = dataUrl || ''; save(); render(); }
+  /** Bio, profile background and the comments switch. Saved here, then sent to the server (others see them on your profile). */
+  function setSocial(o) {
+    if ('bio' in o && String(o.bio || '').slice(0, 160) !== (P.bio || '')) { P.bio = String(o.bio || '').slice(0, 160); P.sdirty = true; }
+    if ('nocm' in o && !!o.nocm !== !!P.nocm) { P.nocm = !!o.nocm; P.sdirty = true; }
+    if ('bg' in o && (o.bg || '') !== (P.bg || '')) { P.bg = o.bg || ''; P.bgdirty = true; P.sdirty = true; }
+    save();
+    syncSocial();
+  }
+  let syncing = false;
+  async function syncSocial() {
+    const N = LP.onlineApi, pid = LP.global && LP.global.pid ? LP.global.pid() : '';
+    if (syncing || !P.sdirty || !pid || !N || !N.url || !N.url()) return;
+    syncing = true;
+    const body = { a: 'psave', pid, bio: P.bio || '', nocm: P.nocm ? 1 : 0 };
+    if (P.bgdirty) body.bg = P.bg || '';
+    const r = await N.post(body, 2);
+    syncing = false;
+    if (r && r.ok) { P.sdirty = false; if (P.bgdirty) P.bgdirty = false; save(); }
+  }
 
   function avHtml(sizeCls) {
     if (P.pfp) return '<span class="acct-av ' + (sizeCls || '') + '" style="background-image:url(' + P.pfp + ');background-size:cover;background-position:center"></span>';
@@ -115,13 +134,31 @@
       '</div>' +
       '<label for="pf-name">Username</label>' +
       '<input id="pf-name" type="text" maxlength="16" autocomplete="off" autocapitalize="words" placeholder="Player" enterkeyhint="done">' +
+      '<label for="pf-bio">Bio</label>' +
+      '<textarea id="pf-bio" class="text-in pf-bio" maxlength="160" rows="2" placeholder="Tell people about yourself (shown on your profile)"></textarea>' +
+      '<div class="pf-bg-row"><div class="pf-bg-prev" id="pf-bg-prev"></div><div class="pf-av-actions"><b>Profile background</b>' +
+        '<label class="btn" for="pf-bg-file">Add picture</label><input id="pf-bg-file" type="file" accept="image/*" class="hidden" aria-hidden="true">' +
+        '<button class="btn" id="pf-bg-clear" type="button">Remove</button></div></div>' +
+      '<label class="set-row" for="pf-nocm"><span class="set-tx"><b>Turn off comments</b><small>Other players will not be able to read or leave comments on your profile.</small></span><input type="checkbox" id="pf-nocm" class="set-check"></label>' +
       '<div class="pf-cards">' + card('basic') + card('bullet') + card('rapid') + '</div>' +
       '<p class="note">Average Elo: <b>' + avg() + '</b>. Ratings only change in online games against real players: Classic (no clock), Bullet (1 and 3 minute games) and Rapid (5 and 10 minute games).</p>' +
-      '<button class="btn wide" id="pf-tour" style="margin-top:.8rem">Replay tutorial</button>' +
+      '<button class="btn wide" id="pf-tour" style="margin-top:.8rem">Replay tutorial</button><p class="note" style="margin:.3rem 0 0;text-align:center">Tutorial is highly recommended</p>' +
       '<div class="row" style="margin-top:.6rem"><button class="btn" id="pf-x">Close</button><button class="btn primary" id="pf-ok">Save</button></div>', true);
     const tour = $('#pf-tour');
-    if (tour) tour.onclick = () => { setName($('#pf-name').value); if (LP.tutorial) LP.tutorial.replay(); };
+    if (tour) tour.onclick = () => { setName($('#pf-name').value); saveSocial(); if (LP.tutorial) LP.tutorial.replay(); };
     $('#pf-name').value = P.name;
+    $('#pf-bio').value = P.bio || '';
+    $('#pf-nocm').checked = !!P.nocm;
+    let bgNew = P.bg || '';
+    const bgPrev = () => { const e = $('#pf-bg-prev'); e.style.backgroundImage = bgNew ? 'url(' + bgNew + ')' : ''; e.classList.toggle('has', !!bgNew); $('#pf-bg-clear').disabled = !bgNew; };
+    bgPrev();
+    $('#pf-bg-file').onchange = (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      resizeImage(f, 640, (data) => { if (data) { bgNew = data.length <= 190000 ? data : bgNew; bgPrev(); } e.target.value = ''; });
+    };
+    $('#pf-bg-clear').onclick = () => { bgNew = ''; bgPrev(); };
+    const saveSocial = () => setSocial({ bio: $('#pf-bio').value.trim(), nocm: $('#pf-nocm').checked, bg: bgNew });
     const preview = $('#pf-av-preview');
     const clearBtn = $('#pf-clear');
     const refreshPreview = () => {
@@ -137,7 +174,7 @@
       });
     };
     clearBtn.onclick = () => { setPfp(''); refreshPreview(); };
-    const ok = () => { setName($('#pf-name').value); LP.closeSheet(); };
+    const ok = () => { setName($('#pf-name').value); saveSocial(); LP.closeSheet(); };
     $('#pf-ok').onclick = ok;
     $('#pf-x').onclick = LP.closeSheet;
     $('#pf-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') ok(); });
@@ -177,6 +214,7 @@
 
   LP.profile = {
     name: () => P.name,
+    bio: () => P.bio || '', bg: () => P.bg || '', nocm: () => !!P.nocm, syncSocial,
     rec: (m) => Object.assign(blank(), P.on[m]),
     avg,
     played,

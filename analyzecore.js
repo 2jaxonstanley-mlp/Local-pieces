@@ -31,7 +31,7 @@
 
   function startPosition(job) {
     const g = new Chess();
-    g.mode = job.mode; g.reset();
+    g.mode = job.mode; g.vp = job.vp || null; g.reset();
     if (job.fen) g.loadFen(job.fen);
     g.secretQueen = { [WHITE]: job.secrets.w, [BLACK]: job.secrets.b };
     return g;

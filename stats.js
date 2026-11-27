@@ -32,6 +32,7 @@
   const blank = () => ({ v: 1, since: 0, games: [], caps: 0, q: {}, puz: {}, rush: [], secs: 0, on: [], owc: 0, owb: 0 });
   let S = blank();
   try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.v === 1) S = Object.assign(blank(), s); } catch (e) { /* ignore */ }
+  const OWN = S;   // your own stats object (S is swapped for someone else's while their profile is open)
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } };
   const touch = () => { if (!S.since) S.since = Date.now(); };
   // brilliant and best moves found in Analyze reviews, one entry per analysed game (kept apart from S, which is swapped while another player's profile is open)
@@ -39,13 +40,19 @@
   let AQ = {};
   try { const a = JSON.parse(localStorage.getItem(AQKEY)); if (a && typeof a === 'object') AQ = a; } catch (e) { /* ignore */ }
   /** Record what Analyze found in one game: re-analysing a game replaces its numbers, so nothing is counted twice. */
-  function analysed(id, brilliant, best) {
+  function analysed(id, brilliant, best, q) {
     if (!id) return;
-    const o = AQ[id];
-    if (o && o.b === brilliant && o.g === best) return;
-    AQ[id] = { b: brilliant | 0, g: best | 0 };
+    const o = AQ[id], qq = q || {};
+    if (o && o.b === brilliant && o.g === best && JSON.stringify(o.q || {}) === JSON.stringify(qq)) return;
+    AQ[id] = { b: brilliant | 0, g: best | 0, q: qq };
     try { localStorage.setItem(AQKEY, JSON.stringify(AQ)); } catch (e) { /* ignore */ }
     if (LP.global && LP.global.syncStats) setTimeout(() => LP.global.syncStats(), 600);
+  }
+  /** Every move rating from every analysed game, added up (your own moves only). */
+  function aqAll() {
+    const t = {};
+    Object.keys(AQ).forEach((id) => { const q = AQ[id] && AQ[id].q; if (q) Object.keys(q).forEach((k) => { t[k] = (t[k] || 0) + q[k]; }); });
+    return t;
   }
   const aqSum = (k) => Object.keys(AQ).reduce((a, id) => a + ((AQ[id] && AQ[id][k]) || 0), 0);
 
@@ -63,7 +70,6 @@
       touch();
       S.games.push({ t: Date.now(), mode: p.mode, lvl: p.level || 'pvp', res: p.level === 'pvp' ? 'p' : p.won ? 'w' : p.draw ? 'd' : 'l', mv: p.moves || 0, secs: p.secs || 0, elo: p.elo ? { b: p.elo.before, a: p.elo.after } : null });
       if (S.games.length > 400) S.games.shift();
-      Object.keys(p.q || {}).forEach((k) => { S.q[k] = (S.q[k] || 0) + p.q[k]; });
       S.secs += p.secs || 0;
       save();
     } else if (name === 'rush' && p) {
@@ -127,7 +133,7 @@
     return {
       v: 1, n: (P && P.name()) || '', avg: P ? P.avg() : 0, since: S.since || 0, e, w, l, d, ws: { c: S.owc || 0, b: S.owb || 0 },
       cap: S.caps || 0, pz: DIFFS.reduce((a, x) => a + puzStat(x[0]).solved, 0), pf: perfectCount(), rb: S.rush.reduce((a, r) => Math.max(a, r.score), 0) || rushBestOld(),
-      sec: Math.round(S.secs || 0), q: (S.q.brilliant || 0) + (S.q.great || 0) + (S.q.best || 0),
+      sec: Math.round(S.secs || 0), q: ((S === OWN ? aqAll() : S.q).brilliant || 0) + ((S === OWN ? aqAll() : S.q).great || 0) + ((S === OWN ? aqAll() : S.q).best || 0),
       rec: onl.slice(-6).reverse().map((x) => ({ r: x.res, m: x.m, o: x.opp, oe: x.oe, dl: (x.a != null && x.b != null) ? x.a - x.b : 0, t: x.t })),
     };
   }
@@ -173,12 +179,17 @@
     const n = w + l + d;
     const chips = [['all', 'All'], ['basic', 'Classic'], ['bullet', 'Bullet'], ['rapid', 'Rapid']].map(([k, nm]) => `<button class="lb-chip${chessMode === k ? ' on' : ''}" data-cm="${k}">${nm}</button>`).join('');
     if (!n && !list.length && !onl.length) return `<div class="lb-chips seg st-seg">${chips}</div>` + empty('Play a game and your results will be broken down here.');
-    const byLvl = LEVELS.concat(['pvp']).map((k) => {
+    // every opponent actually played: the six built-in levels first, then the other named bots (CopyCat, Stockfish...), then anything unknown, then 2 players
+    const seen = Array.from(new Set(list.map((x) => x.lvl)));
+    const named = Object.keys(LP.LEVEL_LABEL || {});
+    const order = LEVELS.concat(named.filter((k) => !LEVELS.includes(k))).filter((k) => seen.includes(k) && k !== 'pvp')
+      .concat(seen.filter((k) => !LEVELS.includes(k) && !named.includes(k) && k !== 'pvp'), seen.includes('pvp') ? ['pvp'] : []);
+    const byLvl = order.map((k) => {
       const g = list.filter((x) => x.lvl === k); if (!g.length) return '';
       const tt = tally(g), pl = tt.w + tt.l + tt.d;
       return `<li class="st-row"><span class="st-rn">${esc(lvl(k))}</span>
         <span class="st-rb">${bar([{ v: tt.w, c: '#81b64c', l: 'Wins' }, { v: tt.d, c: '#8a8a85', l: 'Draws' }, { v: tt.l, c: '#ca3431', l: 'Losses' }])}</span>
-        <span class="st-rv">${k === 'pvp' ? g.length + ' played' : tt.w + '-' + tt.l + '-' + tt.d}<small>${k === 'pvp' ? '' : pct(tt.w, pl) + '% won'}</small></span></li>`;
+        <span class="st-rv">${k === 'pvp' ? g.length + ' played' : `<b class="st-w">${tt.w}W</b> <b class="st-l">${tt.l}L</b> <b class="st-d">${tt.d}D</b>`}<small>${k === 'pvp' ? '' : pct(tt.w, pl) + '% won'}</small></span></li>`;
     }).join('');
     const wins = comp.filter((g) => g.res === 'w'), top = wins.reduce((a, g) => (LEVELS.indexOf(g.lvl) > LEVELS.indexOf(a) ? g.lvl : a), 'dumb');
     const mvAvg = list.length ? Math.round(list.reduce((a, g) => a + g.mv, 0) / list.length) : 0;
@@ -188,11 +199,12 @@
     const gains = onl.filter((g) => g.a != null && g.b != null).map((g) => g.a - g.b);
     const st = streaks(onl.map((g) => ({ res: g.res })));
     const ow = onl.filter((g) => g.res === 'w').length, ol = onl.filter((g) => g.res === 'l').length, od = onl.filter((g) => g.res === 'd').length;
-    const qTotal = QUALITY.reduce((a, x) => a + (S.q[x[0]] || 0), 0);
+    const Q = S === OWN ? aqAll() : (S.q || {});
+    const qTotal = QUALITY.reduce((a, x) => a + (Q[x[0]] || 0), 0);
     const quality = qTotal ? `<h3 class="st-sub">Move quality</h3><div class="st-quality">${QUALITY.map(([id, nm, col]) => {
-      const v = S.q[id] || 0;
+      const v = Q[id] || 0;
       return `<div class="st-q"><img src="icon-${id}.png" alt="" width="22" height="22"><span class="st-qn">${nm}</span><span class="st-qb"><i style="width:${Math.max(v ? 3 : 0, pct(v, qTotal))}%;background:${col}"></i></span><b>${v}</b></div>`;
-    }).join('')}</div><p class="st-note">Counted from your moves when move strength labels are switched on.</p>` : '';
+    }).join('')}</div><p class="st-note">Counted from every move in games that have been analysed (Analyze tab).</p>` : `<h3 class="st-sub">Move quality</h3><p class="st-note">Analyse a game to see how your moves rate: Brilliant, Great, Best, Inaccuracy, Mistake, Blunder and more.</p>`;
     return `<div class="lb-chips seg st-seg">${chips}</div>
       <div class="st-card"><h3 class="st-sub" style="margin-top:0">Online (real players)</h3><div class="st-rec"><div><b>${ow}</b><small>Wins</small></div><div><b>${od}</b><small>Draws</small></div><div><b>${ol}</b><small>Losses</small></div><div><b>${pct(ow, ow + ol + od)}%</b><small>Win rate</small></div></div>
         ${bar([{ v: ow, c: '#81b64c', l: 'Wins' }, { v: od, c: '#8a8a85', l: 'Draws' }, { v: ol, c: '#ca3431', l: 'Losses' }])}</div>
@@ -309,17 +321,20 @@
   }
   /** Everything another player needs to open your profile with all the tabs: the overview data plus a trimmed copy of your stats. */
   function selfCard() {
-    const trim = (n) => ({ v: 2, d: selfData(), s: { since: S.since, caps: S.caps, q: S.q, puz: S.puz, secs: S.secs, owc: S.owc, owb: S.owb, games: S.games.slice(-n.g), on: S.on.slice(-n.o), rush: S.rush.slice(-n.r) }, raw: puzRaw(), old: rushBestOld() });
+    const trim = (n) => ({ v: 2, d: selfData(), s: { since: S.since, caps: S.caps, q: S === OWN ? aqAll() : S.q, puz: S.puz, secs: S.secs, owc: S.owc, owb: S.owb, games: S.games.slice(-n.g), on: S.on.slice(-n.o), rush: S.rush.slice(-n.r) }, raw: puzRaw(), old: rushBestOld() });
     let n = { g: 80, o: 150, r: 40 }, c = trim(n);
     for (let i = 0; i < 4 && JSON.stringify(c).length > 44000; i++) { n = { g: n.g >> 1, o: n.o >> 1, r: n.r >> 1 }; c = trim(n); }
     return c;
   }
   /** Draws the Stats tabs (Overview, Chess, Puzzles, Rush) for any player into nav/body. card = selfCard() or what the server sent. */
-  function mountProfile(nav, body, card, pfp, name) {
-    let t = 'overview';
+  function mountProfile(nav, body, card, pfp, name, extra) {
+    // extra (optional): { tabs: [[key, label]], first: key to open on, mount(key, body) fills the body of one of those tabs }
+    const xt = extra && extra.tabs ? extra.tabs : [];
+    let t = extra && extra.first ? extra.first : 'overview';
     const draw = () => {
-      nav.innerHTML = TABS.map(([k, nm]) => `<button class="lb-tab${k === t ? ' on' : ''}" data-st="${k}">${nm}</button>`).join('');
+      nav.innerHTML = TABS.concat(xt).map(([k, nm]) => `<button class="lb-tab${k === t ? ' on' : ''}" data-st="${k}">${nm}</button>`).join('');
       nav.querySelectorAll('[data-st]').forEach((b) => { b.onclick = () => { t = b.dataset.st; draw(); }; });
+      if (xt.some(([k]) => k === t)) { body.innerHTML = ''; extra.mount(t, body); return; }
       const mine = S, ro = RAWOV, oo = OLDOV;
       try {
         if (card.s) { S = Object.assign(blank(), card.s); RAWOV = card.raw || {}; OLDOV = card.old || 0; }

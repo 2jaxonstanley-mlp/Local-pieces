@@ -10,7 +10,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
   <link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
-  <link rel="stylesheet" href="styles.css?v=77">
+  <link rel="stylesheet" href="styles.css?v=101">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- Carlito is the open Calibri look-alike, used when Calibri isn't installed -->
@@ -21,49 +21,97 @@
 
     <!-- MENU -->
     <section id="menu" class="page active">
-      <button id="on-tab" class="on-tab off" aria-label="Online players"><span class="on-dot" aria-hidden="true"></span><span id="on-count">Online</span></button>
-      <div class="menu-top">
-        <button id="settings-btn" class="icon-btn" aria-label="Settings" title="Settings">
+      <header class="m2-top">
+        <div class="m2-brand"><img class="m2-logo" src="logo.png" width="40" height="40" alt="" aria-hidden="true"><div class="m2-bt"><h1 class="logo">Local Pieces <span class="m2-ver">v2.0</span></h1><p class="tagline">Chess, your way.</p></div></div>
+        <div class="m2-right">
+          <button id="on-tab" class="on-tab off" aria-label="Online players"><span class="on-dot" aria-hidden="true"></span><span id="on-count">Online</span></button>
+          <div class="menu-top">
+            <button id="settings-btn" class="icon-btn" aria-label="Settings" title="Settings">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
-        <button id="news-btn" class="icon-btn" aria-label="Update log" title="Update log">
+            <button id="news-btn" class="icon-btn" aria-label="Update log" title="Update log">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 10h16M4 15h10M4 20h7"/></svg>
         </button>
-        <button id="acct" class="acct" aria-label="Your profile"><span class="acct-av" id="acct-av">?</span><span class="acct-tx"><b id="acct-name">Set name</b><small id="acct-elo">Tap to set up</small></span></button>
-      </div>
-      <div class="menu-inner">
-        <header class="hero">
-          <img class="hero-logo" src="logo.png" width="96" height="96" alt="" aria-hidden="true">
-          <h1 class="logo">Local Pieces</h1>
-          <p class="tagline">Chess, your way.</p>
-        </header>
-
-        <button id="continue-btn" class="mode continue hidden">
-          <span class="mode-ic" aria-hidden="true"><i class="ic-play"></i></span>
-          <span class="mode-text">
-            <span id="continue-name" class="mode-name">Continue playing</span>
-            <span id="continue-desc" class="mode-desc"></span>
-            <span id="continue-prog" class="mode-desc continue-prog"></span>
-          </span>
-          <span class="mode-go" aria-hidden="true">&rsaquo;</span>
-        </button>
-        <button id="saves-btn" class="mode saves hidden" style="--accent:#8fc15b">
-          <span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
-          <span class="mode-text">
-            <span class="mode-name">Saved games</span>
-            <span id="saves-desc" class="mode-desc"></span>
-          </span>
-          <span class="mode-go" aria-hidden="true">&rsaquo;</span>
-        </button>
-
-                <section class="mgrp closed" data-g="global">
-          <button class="mgrp-h" type="button" aria-expanded="false"><span class="mgrp-t">Play online</span><span class="mgrp-s">Friends and world rankings</span><i class="mgrp-chev" aria-hidden="true"></i></button>
-          <div class="mgrp-b"><div class="modes">
-          <button class="mode" data-mode="online" style="--accent:#7bd88f">
-            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/></svg></span>
+            <button id="acct" class="acct" aria-label="Your profile"><span class="acct-av" id="acct-av">?</span><span class="acct-tx"><b id="acct-name">Set name</b><small id="acct-elo">Tap to set up</small></span></button>
+          </div>
+        </div>
+      </header>
+      <div class="m2-body">
+        <nav class="m2-side" id="m2-side" aria-label="Main menu"><button class="m2-si on" type="button" data-p="home" data-tip="Continue playing and your recent games" title="Continue playing and your recent games" aria-label="Home"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg><span class="m2-sl">Home</span></button><button class="m2-si" type="button" data-p="classic" data-tip="Untimed and timed chess" title="Untimed and timed chess" aria-label="Classic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="6.5" r="3"/><path d="M10 10.5h4l1.6 6H8.4zM7 21h10M8.5 16.5h7"/></svg><span class="m2-sl">Classic</span></button><button class="m2-si" type="button" data-p="puzzles" data-tip="Puzzles, Rush, Popular and Puzzle Battle" title="Puzzles, Rush, Popular and Puzzle Battle" aria-label="Puzzles"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h4.5a2 2 0 1 1 4 0H17v4.5a2 2 0 1 1 0 4V21H4z"/></svg><span class="m2-sl">Puzzles</span></button><button class="m2-si" type="button" data-p="variants" data-tip="Secret Queen, Air Hockey, Chess960, Atomic and more" title="Secret Queen, Air Hockey, Chess960, Atomic and more" aria-label="Variants"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.5 5.5L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-.5z"/></svg><span class="m2-sl">Variants</span></button><button class="m2-si" type="button" data-p="currency" data-tip="Tasks and the Shop" title="Tasks and the Shop" aria-label="Currency"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5c0-1 1-1.7 2.5-1.7s2.5.7 2.5 1.7-1 1.6-2.5 1.9-2.5.9-2.5 2 1 1.8 2.5 1.8 2.5-.8 2.5-1.8"/></svg><span class="m2-sl">Currency</span></button><button class="m2-si" type="button" data-p="leaderboards" data-tip="Global rankings, your Stats and records" title="Global rankings, your Stats and records" aria-label="Leaderboards"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21V10M16 21V4M12 21v-7M4 21h16"/></svg><span class="m2-sl">Leaderboards</span></button><button class="m2-si" type="button" data-p="analysis" data-tip="Analyze games, Match history, Position editor" title="Analyze games, Match history, Position editor" aria-label="Analysis"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-5-5"/></svg><span class="m2-sl">Analysis</span></button><button class="m2-si" type="button" data-p="learn" data-tip="Lessons: forks, castling, checkmates and more" title="Lessons: forks, castling, checkmates and more" aria-label="Learn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11.5V16c0 1.5 3 3 6 3s6-1.5 6-3v-4.5M22 9v6"/></svg><span class="m2-sl">Learn</span></button>
+          <button class="m2-si" type="button" data-p="mistakes" data-tip="Fix the mistakes from your games" title="Fix the mistakes from your games" aria-label="Mistake Training"><img src="lp-mistake.png" width="24" height="24" alt="" style="object-fit:contain;opacity:.9"><span class="m2-sl">Mistake Training</span></button><button class="m2-si" type="button" data-p="discussion" data-tip="Feedback and Global Chat" title="Feedback and Global Chat" aria-label="Discussion"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.2-4.4A8 8 0 1 1 21 12z"/></svg><span class="m2-sl">Discussion</span></button></nav>
+        <main class="m2-main">
+          <div class="m2-pane on" data-pane="home">
+            <div id="m2-daily"></div>
+            <section class="m2-sec" id="m2-dpz"></section>
+            <section class="m2-sec" id="m2-cont"></section>
+            <section class="m2-sec hidden" id="m2-fr"></section>
+            <section class="m2-sec" id="m2-hist"></section>
+          </div>
+          <div class="m2-pane" data-pane="classic">
+            <h2 class="m2-h">Classic <span>&ndash; Untimed + Timed Chess</span></h2>
+            <div class="m2-play" id="m2-play">
+              <label class="m2-lab" for="m2-time">Time type</label>
+              <div class="m2-sel"><select id="m2-time" aria-label="Time type"></select></div>
+              <p class="m2-note" id="m2-tnote"></p>
+              <button id="m2-playbtn" class="btn primary big m2-pbtn" type="button">Play</button>
+            </div>
+            <div class="modes m2-grid">          <button class="mode" data-mode="tas" style="--accent:#5ab0ff">
+            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v6L5 19a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-10V3M7.5 15h9"/></svg></span>
             <span class="mode-text">
-              <span class="mode-name">Online Chess</span>
-              <span class="mode-desc">Play a friend on another device, timed or unlimited.</span>
+              <span class="mode-name">Sandbox</span>
+              <span class="mode-desc">Play the computer with hints, undo and both sides.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+</div>
+          </div>
+          <div class="m2-pane" data-pane="puzzles">
+            <h2 class="m2-h">Puzzles <span>&ndash; Tactics, Rush and Battle</span></h2>
+            <div class="modes m2-grid">          <button class="mode" data-mode="puzzle" style="--accent:#f2c45a">
+            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h4.5a2 2 0 1 1 4 0H17v4.5a2 2 0 1 1 0 4V21H4z"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Puzzles</span>
+              <span class="mode-desc">A fresh tactics challenge every time.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="popular" style="--accent:#ffb347">
+            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c.8 3.6 5 5 5 10a5 5 0 0 1-10 0c0-2 .9-3.2 2-4.2.1 1.8.9 2.7 2 2.7-.6-3-.4-6 1-8.5z"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Popular Puzzles</span>
+              <span class="mode-desc">Famous positions to solve against the Insane computer.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="community" style="--accent:#7cc7ff">
+            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="9" r="2.4"/><path d="M16.5 14.2c2.7-.3 4.9 1.7 4.9 4.8"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Community Puzzles</span>
+              <span class="mode-desc">Solve puzzles other players made, or publish your own.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="puzzlerush" style="--accent:#ff8a3d">
+            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Puzzle Rush</span>
+              <span class="mode-desc">Solve as many as you can with three lives.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="rush" style="--accent:#ff9a4d">
+            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Capture Rush</span>
+              <span class="mode-desc">Beat the clock and capture as much as you can.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="mode" data-mode="solo" style="--accent:#6ee7a8">
+            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Solo Chess</span>
+              <span class="mode-desc">Perfect Run: 30 capture puzzles against the clock.</span>
             </span>
             <span class="mode-go" aria-hidden="true">&rsaquo;</span>
           </button>
@@ -75,56 +123,18 @@
             </span>
             <span class="mode-go" aria-hidden="true">&rsaquo;</span>
           </button>
-          <button class="mode" data-mode="global" style="--accent:#e8c14a">
-            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg></span>
+</div>
+          </div>
+          <div class="m2-pane" data-pane="variants">
+            <h2 class="m2-h">Variants <span>&ndash; Chess with a twist</span></h2>
+            <div class="modes m2-grid">          <button class="mode" data-mode="custom" style="--accent:#e28fd6">
+            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10"/><path d="M18 7h2"/><circle cx="16" cy="7" r="2"/><path d="M4 17h2"/><path d="M10 17h10"/><circle cx="8" cy="17" r="2"/></svg></span>
             <span class="mode-text">
-              <span class="mode-name">Leaderboards</span>
-              <span class="mode-desc">Global rankings for Puzzle Rush and more.</span>
+              <span class="mode-name">Custom</span>
+              <span class="mode-desc">Chess960, 3-Check, Atomic, Horde and more, online or on this device.</span>
             </span>
             <span class="mode-go" aria-hidden="true">&rsaquo;</span>
           </button>
-          </div></div>
-        </section>
-        <section class="mgrp closed" data-g="classic">
-          <button class="mgrp-h" type="button" aria-expanded="false"><span class="mgrp-t">Classic</span><span class="mgrp-s">Untimed and timed chess</span><i class="mgrp-chev" aria-hidden="true"></i></button>
-          <div class="mgrp-b"><div class="modes">
-          <button class="mode" data-mode="basic" style="--accent:#8fc15b">
-            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="6.5" r="3"/><path d="M10 10.5h4l1.6 6H8.4zM7 21h10M8.5 16.5h7"/></svg></span>
-            <span class="mode-text">
-              <span class="mode-name">Classic</span>
-              <span class="mode-desc">Standard chess with no clock.</span>
-            </span>
-            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
-          </button>
-          <button class="mode" data-mode="bullet" style="--accent:#ffd35a">
-            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></span>
-            <span class="mode-text">
-              <span class="mode-name">Bullet</span>
-              <span class="mode-desc">1 or 3 minutes each, no extra time.</span>
-            </span>
-            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
-          </button>
-          <button class="mode" data-mode="rapid" style="--accent:#5ec8c0">
-            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/></svg></span>
-            <span class="mode-text">
-              <span class="mode-name">Rapid</span>
-              <span class="mode-desc">5 or 10 minutes each, plus 2 seconds a move.</span>
-            </span>
-            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
-          </button>
-          <button class="mode" data-mode="tas" style="--accent:#5ab0ff">
-            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v6L5 19a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-10V3M7.5 15h9"/></svg></span>
-            <span class="mode-text">
-              <span class="mode-name">Sandbox</span>
-              <span class="mode-desc">Play the computer with hints, undo and both sides.</span>
-            </span>
-            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
-          </button>
-          </div></div>
-        </section>
-        <section class="mgrp closed" data-g="custom">
-          <button class="mgrp-h" type="button" aria-expanded="false"><span class="mgrp-t">Variants</span><span class="mgrp-s">Chess with a twist</span><i class="mgrp-chev" aria-hidden="true"></i></button>
-          <div class="mgrp-b"><div class="modes">
           <button class="mode" data-mode="secret" style="--accent:#b48cf2">
             <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 8 4 4 5-7 5 7 4-4-2 11H5z"/><path d="M5 21h14"/></svg></span>
             <span class="mode-text">
@@ -173,65 +183,51 @@
             </span>
             <span class="mode-go" aria-hidden="true">&rsaquo;</span>
           </button>
-          </div></div>
-        </section>
-        <section class="mgrp closed" data-g="puzzles">
-          <button class="mgrp-h" type="button" aria-expanded="false"><span class="mgrp-t">Puzzles</span><span class="mgrp-s">Tactics, races and streaks</span><i class="mgrp-chev" aria-hidden="true"></i></button>
-          <div class="mgrp-b"><div class="modes">
-          <button class="mode" data-mode="puzzle" style="--accent:#f2c45a">
-            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h4.5a2 2 0 1 1 4 0H17v4.5a2 2 0 1 1 0 4V21H4z"/></svg></span>
+</div>
+          </div>
+          <div class="m2-pane" data-pane="currency">
+            <h2 class="m2-h">Currency <span>&ndash; Tasks and the Shop</span></h2>
+            <div class="modes m2-grid">          <button class="mode" data-mode="tasks" style="--accent:#3fbfa3">
+            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg></span>
             <span class="mode-text">
-              <span class="mode-name">Puzzles</span>
-              <span class="mode-desc">A fresh tactics challenge every time.</span>
+              <span class="mode-name">Daily &amp; Weekly Tasks</span>
+              <span class="mode-desc" id="tasks-desc">Complete tasks to earn tokens.</span>
             </span>
             <span class="mode-go" aria-hidden="true">&rsaquo;</span>
           </button>
-          <button class="mode" data-mode="popular" style="--accent:#ffb347">
-            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c.8 3.6 5 5 5 10a5 5 0 0 1-10 0c0-2 .9-3.2 2-4.2.1 1.8.9 2.7 2 2.7-.6-3-.4-6 1-8.5z"/></svg></span>
+          <button class="mode" data-mode="shop" style="--accent:#f5a623">
+            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="5" rx="1"/><path d="M12 8v13M5 13v8h14v-8M12 8C10 4 6 4 6 7s4 1 6 1zM12 8c2-4 6-4 6-1s-4 1-6 1z"/></svg></span>
             <span class="mode-text">
-              <span class="mode-name">Popular Puzzles</span>
-              <span class="mode-desc">Famous positions to solve against the Insane computer.</span>
+              <span class="mode-name">Shop</span>
+              <span class="mode-desc" id="shop-desc">Spend tokens on crates.</span>
             </span>
             <span class="mode-go" aria-hidden="true">&rsaquo;</span>
           </button>
-          <button class="mode" data-mode="community" style="--accent:#7cc7ff">
-            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="9" r="2.4"/><path d="M16.5 14.2c2.7-.3 4.9 1.7 4.9 4.8"/></svg></span>
+</div>
+          </div>
+          <div class="m2-pane" data-pane="leaderboards">
+            <h2 class="m2-h">Leaderboards <span>&ndash; Rankings and records</span></h2>
+            <div class="modes m2-grid">          <button class="mode" data-mode="global" style="--accent:#e8c14a">
+            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg></span>
             <span class="mode-text">
-              <span class="mode-name">Community Puzzles</span>
-              <span class="mode-desc">Puzzles made by players. Build and publish your own.</span>
+              <span class="mode-name">Leaderboards</span>
+              <span class="mode-desc">Global rankings for Puzzle Rush and more.</span>
             </span>
             <span class="mode-go" aria-hidden="true">&rsaquo;</span>
           </button>
-          <button class="mode" data-mode="puzzlerush" style="--accent:#ff8a3d">
-            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg></span>
+          <button class="mode" data-mode="board" style="--accent:#e8c14a">
+            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V11M12 21V4M19 21v-7"/></svg></span>
             <span class="mode-text">
-              <span class="mode-name">Puzzle Rush</span>
-              <span class="mode-desc">Solve as many as you can with three lives.</span>
+              <span class="mode-name">Stats</span>
+              <span class="mode-desc">Ratings, results, puzzles, Rush and your records.</span>
             </span>
             <span class="mode-go" aria-hidden="true">&rsaquo;</span>
           </button>
-          <button class="mode" data-mode="rush" style="--accent:#ff9a4d">
-            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span>
-            <span class="mode-text">
-              <span class="mode-name">Capture Rush</span>
-              <span class="mode-desc">Beat the clock and capture as much as you can.</span>
-            </span>
-            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
-          </button>
-          <button class="mode" data-mode="solo" style="--accent:#6ee7a8">
-            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg></span>
-            <span class="mode-text">
-              <span class="mode-name">Solo Chess</span>
-              <span class="mode-desc">Perfect Run: 30 capture puzzles against the clock.</span>
-            </span>
-            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
-          </button>
-          </div></div>
-        </section>
-        <section class="mgrp closed" data-g="analysis">
-          <button class="mgrp-h" type="button" aria-expanded="false"><span class="mgrp-t">Analysis</span><span class="mgrp-s">Review, replay and set up</span><i class="mgrp-chev" aria-hidden="true"></i></button>
-          <div class="mgrp-b"><div class="modes">
-          <button class="mode" data-mode="analyze" style="--accent:#7cc4ff">
+</div>
+          </div>
+          <div class="m2-pane" data-pane="analysis">
+            <h2 class="m2-h">Analysis <span>&ndash; Review and edit</span></h2>
+            <div class="modes m2-grid">          <button class="mode" data-mode="analyze" style="--accent:#7cc4ff">
             <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m21 21-5.2-5.2M7.5 12.5l2-3 2 2 2-3"/></svg></span>
             <span class="mode-text">
               <span class="mode-name">Analyze</span>
@@ -255,45 +251,60 @@
             </span>
             <span class="mode-go" aria-hidden="true">&rsaquo;</span>
           </button>
-          </div></div>
-        </section>
-        <section class="mgrp closed" data-g="rewards">
-          <button class="mgrp-h" type="button" aria-expanded="false"><span class="mgrp-t">Rewards</span><span class="mgrp-s">Tasks and the shop</span><i class="mgrp-chev" aria-hidden="true"></i></button>
-          <div class="mgrp-b"><div class="modes">
-          <button class="mode" data-mode="tasks" style="--accent:#3fbfa3">
-            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg></span>
+</div>
+          </div>
+        </main>
+      </div>
+      <div class="m2-legacy" hidden>
+        <button id="continue-btn" class="mode continue hidden">
+          <span class="mode-ic" aria-hidden="true"><i class="ic-play"></i></span>
+          <span class="mode-text">
+            <span id="continue-name" class="mode-name">Continue playing</span>
+            <span id="continue-desc" class="mode-desc"></span>
+            <span id="continue-prog" class="mode-desc continue-prog"></span>
+          </span>
+          <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+        </button>
+        <button id="saves-btn" class="mode saves hidden" style="--accent:#8fc15b">
+          <span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+          <span class="mode-text">
+            <span class="mode-name">Saved games</span>
+            <span id="saves-desc" class="mode-desc"></span>
+          </span>
+          <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+        </button>
+          <button class="mode" data-mode="basic" style="--accent:#8fc15b">
+            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="6.5" r="3"/><path d="M10 10.5h4l1.6 6H8.4zM7 21h10M8.5 16.5h7"/></svg></span>
             <span class="mode-text">
-              <span class="mode-name">Daily &amp; Weekly Tasks</span>
-              <span class="mode-desc" id="tasks-desc">Complete tasks to earn tokens.</span>
+              <span class="mode-name">Classic</span>
+              <span class="mode-desc">Standard chess with no clock.</span>
             </span>
             <span class="mode-go" aria-hidden="true">&rsaquo;</span>
           </button>
-          <button class="mode" data-mode="shop" style="--accent:#f5a623">
-            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="5" rx="1"/><path d="M12 8v13M5 13v8h14v-8M12 8C10 4 6 4 6 7s4 1 6 1zM12 8c2-4 6-4 6-1s-4 1-6 1z"/></svg></span>
+          <button class="mode" data-mode="bullet" style="--accent:#ffd35a">
+            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></span>
             <span class="mode-text">
-              <span class="mode-name">Shop</span>
-              <span class="mode-desc" id="shop-desc">Spend tokens on crates.</span>
+              <span class="mode-name">Bullet</span>
+              <span class="mode-desc">1 or 3 minutes each, no extra time.</span>
             </span>
             <span class="mode-go" aria-hidden="true">&rsaquo;</span>
           </button>
-          </div></div>
-        </section>
-        <section class="mgrp closed" data-g="progress">
-          <button class="mgrp-h" type="button" aria-expanded="false"><span class="mgrp-t">Progress</span><span class="mgrp-s">Stats and ratings</span><i class="mgrp-chev" aria-hidden="true"></i></button>
-          <div class="mgrp-b"><div class="modes">
-          <button class="mode" data-mode="board" style="--accent:#e8c14a">
-            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V11M12 21V4M19 21v-7"/></svg></span>
+          <button class="mode" data-mode="rapid" style="--accent:#5ec8c0">
+            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/></svg></span>
             <span class="mode-text">
-              <span class="mode-name">Stats</span>
-              <span class="mode-desc">Ratings, results, puzzles, Rush and your records.</span>
+              <span class="mode-name">Rapid</span>
+              <span class="mode-desc">5 or 10 minutes each, plus 2 seconds a move.</span>
             </span>
             <span class="mode-go" aria-hidden="true">&rsaquo;</span>
           </button>
-          </div></div>
-        </section>
-        <section class="mgrp closed" data-g="more">
-          <button class="mgrp-h" type="button" aria-expanded="false"><span class="mgrp-t">More</span><span class="mgrp-s">Suggestions and help</span><i class="mgrp-chev" aria-hidden="true"></i></button>
-          <div class="mgrp-b"><div class="modes">
+          <button class="mode" data-mode="online" style="--accent:#7bd88f">
+            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Online Chess</span>
+              <span class="mode-desc">Play a friend on another device, timed or unlimited.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
           <button class="mode" data-mode="suggest" style="--accent:#ff9ecb">
             <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg></span>
             <span class="mode-text">
@@ -302,26 +313,37 @@
             </span>
             <span class="mode-go" aria-hidden="true">&rsaquo;</span>
           </button>
-          </div></div>
-        </section>
+          <button class="mode" data-mode="gchat" style="--accent:#6ec6b8">
+            <span class="mode-ic" aria-hidden="true"><svg class="mi" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+            <span class="mode-text">
+              <span class="mode-name">Global Chat</span>
+              <span class="mode-desc">Talk with everyone online. Messages last 5 minutes.</span>
+            </span>
+            <span class="mode-go" aria-hidden="true">&rsaquo;</span>
+          </button>
       </div>
     </section>
 
     <!-- SUGGESTIONS -->
+    <section id="learn" class="page"></section>
+    <section id="mistakes" class="page"></section>
+
     <section id="suggest" class="page">
       <header class="game-header">
         <button id="sg-back" class="text-btn" aria-label="Back to menu">&larr; Menu</button>
-        <span class="pz-head"><span class="mode-title">Suggestions</span></span>
+        <span class="pz-head"><span class="mode-title">Discussion</span></span>
         <span class="header-spacer"></span>
       </header>
       <div class="lb-wrap">
-        <p class="sg-lead">Got an idea, found a bug, or want a new skin or game mode? Tell me. Write it below, then post it.</p>
+        <p class="sg-lead">Got an idea, found a bug, or want a new skin or game mode? Tell me. Write it below and send it.</p>
         <label for="sg-text" class="sg-label">Your suggestion</label>
         <textarea id="sg-text" class="sg-text" rows="6" maxlength="1500" placeholder="What should I add or fix?"></textarea>
+        <div class="fb-pic"><label class="btn fb-pick" for="sg-file">Add a screenshot (optional)</label><input id="sg-file" type="file" accept="image/jpeg,image/png,image/webp" hidden><span id="sg-fn" class="fb-fn"></span><button class="text-btn hidden" id="sg-rm" type="button">Remove</button></div>
+        <p class="fb-err hidden" id="sg-err" role="alert"></p>
         <div class="stack">
-          <a id="sg-gh" class="btn primary big sg-btn" target="_blank" rel="noopener">Post it on GitHub Issues</a>
+          <button id="sg-send" class="btn primary big sg-btn" type="button">Send suggestion</button>
         </div>
-        <p class="lb-hint">GitHub needs a free account.</p>
+        <p class="lb-hint" id="sg-hint">Sending one pays 3 tokens, once a day.</p>
       </div>
     </section>
 
@@ -681,54 +703,78 @@
     </div>
   </div>
 
-  <script src="chess.js?v=31"></script>
+  <script src="chess.js?v=33"></script>
   <script src="book.js?v=3"></script>
   <script src="guessq.js?v=1"></script>
-  <script src="ai.js?v=45"></script>
+  <script src="ai.js?v=46"></script>
   <script src="guessbot.js?v=4"></script>
-  <script src="app.js?v=61"></script>
-  <script src="stockfish-bridge.js?v=6"></script>
+  <script src="app.js?v=68"></script>
+  <script src="stockfish-bridge.js?v=7"></script>
   <script src="botstyles.js?v=4"></script>
-  <script src="export.js?v=2"></script>
-  <script src="prefs.js?v=9"></script>
+  <script src="export.js?v=3"></script>
+  <script src="prefs.js?v=10"></script>
   <script src="history.js?v=8"></script>
-  <script src="saves.js?v=6"></script>
+  <script src="saves.js?v=7"></script>
   <script src="leaderboard.js?v=33"></script>
-  <script src="profile.js?v=31"></script>
+  <script src="profile.js?v=33"></script>
   <script src="hats.js?v=2"></script>
-  <script src="shop.js?v=41"></script>
+  <script src="boardeditor.js?v=1"></script>
+  <script src="shop.js?v=48"></script>
   <script src="upgrades.js?v=2"></script>
-    <script src="stats.js?v=40"></script>
-  <script src="rush.js?v=25"></script>
+    <script src="stats.js?v=42"></script>
+  <script src="rush.js?v=26"></script>
   <script src="puzzlegen.js?v=36"></script>
   <script src="puzzlebank.js?v=3"></script>
-  <script src="ratings.js?v=38"></script>
-  <script src="puzzles.js?v=41"></script>
+  <script src="ratings.js?v=39"></script>
+  <script src="puzzles.js?v=42"></script>
   <script src="popular.js?v=4"></script>
   <script src="drag.js?v=4"></script>
   <script src="evalbar.js?v=5"></script>
   <script src="solocore.js?v=1"></script>
   <script src="solo.js?v=2"></script>
-  <script src="analyzecore.js?v=3"></script>
+  <script src="analyzecore.js?v=4"></script>
   <script src="explain.js?v=2"></script>
-  <script src="analyze.js?v=23"></script>
+  <script src="analyze.js?v=25"></script>
   <script src="editor.js?v=6"></script>
-  <script src="community.js?v=2"></script>
+  <script src="community.js?v=3"></script>
   <script src="mods.js?v=5"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
   <script src="supabase-config.js?v=1"></script>
-  <script src="online.js?v=7"></script>
-  <script src="globalboard.js?v=6"></script>
-  <script src="players.js?v=4"></script>
-  <script src="spectate.js?v=1"></script>
-  <script src="feedback.js?v=1"></script>
-  <script src="puzzlerush.js?v=10"></script>
-  <script src="challenge.js?v=1"></script>
-  <script src="hockey.js?v=10"></script>
-  <script src="tutorial.js?v=11"></script>
+  <script src="online.js?v=9"></script>
+  <script src="globalboard.js?v=7"></script>
+  <script src="players.js?v=9"></script>
+  <script src="spectate.js?v=3"></script>
+  <script src="feedback.js?v=2"></script>
+  <script src="puzzlerush.js?v=11"></script>
+  <script src="challenge.js?v=4"></script>
+  <script src="comments.js?v=2"></script>
+  <script src="notifications.js?v=2"></script>
+  <script src="chat.js?v=2"></script>
+  <script src="live.js?v=1"></script>
+  <script src="hockey.js?v=11"></script>
+  <script src="tutorial.js?v=16"></script>
   <script src="lesson.js?v=1"></script>
-  <script src="updates.js?v=6"></script>
+  <script src="questbar.js?v=1"></script>
+  <script src="updates.js?v=22"></script>
   <script src="extras.js?v=20"></script>
-  <script src="menu.js?v=3"></script>
+  <script src="menu.js?v=4"></script>
+  <script src="menu2.js?v=5"></script>
+  <script src="friends.js?v=2"></script>
+  <script src="daily.js?v=1"></script>
+  <script src="learn-forks.js?v=1"></script>
+  <script src="learn-castling.js?v=1"></script>
+  <script src="learn-defend.js?v=1"></script>
+  <script src="learn-develop.js?v=1"></script>
+  <script src="learn-enpassant.js?v=1"></script>
+  <script src="learn-hanging.js?v=1"></script>
+  <script src="learn-kingdef.js?v=1"></script>
+  <script src="learn-mates.js?v=1"></script>
+  <script src="learn-pins.js?v=1"></script>
+  <script src="learn-promotion.js?v=1"></script>
+  <script src="learn-skewers.js?v=1"></script>
+  <script src="learn.js?v=5"></script>
+  <script src="mistakes.js?v=1"></script>
+  <script src="dailypuzzle.js?v=2"></script>
+  <script src="polish.js?v=1"></script>
 </body>
 </html>

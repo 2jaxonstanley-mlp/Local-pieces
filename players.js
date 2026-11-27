@@ -21,7 +21,7 @@
   function showCount() {
     if (!tab) return;
     tab.classList.toggle('off', count == null);
-    label.textContent = count == null ? 'Online' : 'Online now ' + count;
+    label.innerHTML = count == null ? 'Online' : '<span class="on-w">Online Now </span>' + count;
   }
   async function beat() {
     if (!enabled() || document.hidden) return;
@@ -31,6 +31,7 @@
     const r = await N().post({ a: 'hb', pid: pid(), st, nospec: allow ? 0 : 1 }, 1, 'hb');
     if (r && typeof r.online === 'number') { count = r.online; showCount(); }
     if (r && LP.challenge) LP.challenge.receive(r.ch || []);
+    if (r && LP.profile && LP.profile.syncSocial) LP.profile.syncSocial();
   }
 
   /** "In a match vs Bob · Bullet 3 min + 1", "Playing vs Insane (computer) · Classic", "Not in a match". */
@@ -88,7 +89,7 @@
 
   /* ------------------------------------------------------------------ profile */
   let from = 'menu';
-  async function openProfile(id) {
+  async function openProfile(id, first) {
     const cur = document.querySelector('.page.active');
     if (cur && cur.id !== 'pf-page') from = cur.id;
     LP.showPage('pf-page');
@@ -104,16 +105,27 @@
     const name = mine ? (P && P.name()) || 'Player' : r.name, pfp = mine ? (P && P.pfp && P.pfp()) : r.pfp;
     $('#pf-title').textContent = name;
     const status = !mine && r ? `<p class="pf-status ${r.on ? 'on' : ''}"><span class="pl-dot ${r.on ? 'on' : 'off'}"></span>${r.on ? 'Online now' : 'Offline'}${r.on ? ` &middot; <span class="pf-play">${esc(statusText(r.pl))}</span>` : ''}</p>` : '';
+    const bio = mine ? (P && P.bio ? P.bio() : '') : (r && r.bio) || '', bg = mine ? (P && P.bg ? P.bg() : '') : (r && r.bg) || '';
+    const nocm = mine ? false : !!(r && r.nocm);
+    const cover = (bg ? `<div class="pf-cover" style="background-image:url(${bg.replace(/[^A-Za-z0-9+/=:;,.\-_]/g, '')})"></div>` : '') + (bio ? `<p class="pf-bio-t">${esc(bio)}</p>` : '');
+    const streak = mine ? (LP.daily ? LP.daily.streak() : 0) : (r && r.streak) || 0;
+    const streakChip = streak > 0 ? `<p class="pf-streak"><span aria-hidden="true">\u{1F525}</span> <b>${streak}</b> day streak</p>` : '';
+    const frBox = !mine && r && enabled() ? '<div id="pf-fr"></div>' : '';
     const watch = !mine && r && r.on && r.pl && r.pl.w && LP.spectate ? `<button class="btn primary wide pf-watch" id="pf-watch">Watch ${esc(r.name)}'s game</button>` : '';
     const chal = !mine && r && enabled() && LP.challenge ? `<button class="btn primary wide pf-chal" id="pf-ch">Challenge ${esc(name)}</button>` : '';
     if (!d) {
-      body.innerHTML = status + watch + chal + `<div class="st-hero">${av(pfp, name, 'st-av')}<span class="st-hero-t"><b>${esc(name)}</b><span>Average Elo <strong class="st-avg">${(r && r.elo) || '—'}</strong></span></span></div><div class="st-empty">This player has not shared their stats yet.</div>`;
+      body.innerHTML = cover + status + streakChip + frBox + watch + chal + `<div class="st-hero">${av(pfp, name, 'st-av')}<span class="st-hero-t"><b>${esc(name)}</b><span>Average Elo <strong class="st-avg">${(r && r.elo) || '—'}</strong></span></span></div><div class="st-empty">This player has not shared their stats yet.</div><h3 class="st-sub">Comments</h3><div id="pf-cm"></div>`;
+      if (nocm && $('#pf-cm')) $('#pf-cm').innerHTML = '<p class="lb-hint">This player has turned comments off.</p>';
+      if (LP.comments && $('#pf-cm') && !nocm) LP.comments.mount($('#pf-cm'), id, mine);
+      if ($('#pf-fr') && LP.friends) LP.friends.mountBtn($('#pf-fr'), id, name, r.fc);
       if ($('#pf-ch')) $('#pf-ch').onclick = () => LP.challenge.ask(id, name);
       if ($('#pf-watch')) $('#pf-watch').onclick = () => LP.spectate.watch(r.pl, name, 'pf-page');
       return;
     }
-    body.innerHTML = status + watch + chal + '<div id="pf-nav" class="lb-tabs st-nav" role="tablist"></div><div id="pf-tabs"></div>';
-    LP.stats.mountProfile($('#pf-nav'), $('#pf-tabs'), card, pfp, name);
+    body.innerHTML = cover + status + streakChip + frBox + watch + chal + '<div id="pf-nav" class="lb-tabs st-nav" role="tablist"></div><div id="pf-tabs"></div>';
+    const extra = LP.comments && !nocm ? { tabs: [['comments', 'Comments']], first: first === 'comments' ? 'comments' : '', mount: (k, b) => LP.comments.mount(b, id, mine) } : null;
+    LP.stats.mountProfile($('#pf-nav'), $('#pf-tabs'), card, pfp, name, extra);
+    if ($('#pf-fr') && LP.friends) LP.friends.mountBtn($('#pf-fr'), id, name, r.fc);
     if ($('#pf-ch')) $('#pf-ch').onclick = () => LP.challenge.ask(id, name);
     if ($('#pf-watch')) $('#pf-watch').onclick = () => LP.spectate.watch(r.pl, name, 'pf-page');
   }
@@ -140,5 +152,5 @@
   setTimeout(beat, 1200);
   setInterval(beat, BEAT_MS);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) beat(); });
-  LP.players = { show, open: openProfile, beat };
+  LP.players = { show, open: openProfile, beat, statusText };
 })();

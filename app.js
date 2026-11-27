@@ -37,6 +37,7 @@
   let paused = false;          // 0-player games: waiting for Resume
   let posKeys = [];            // position key after each ply (index 0 = start), for repetition
   let hintMoves = [];          // TAS hint currently shown (up to 3 moves, best first)
+  let hintData = null, hintStage = 0, hintFresh = false;   // the last hint result for this position, how many presses deep we are, and whether to animate it in
   let hintAvail = false;       // a forced mate exists right now (makes the Hint button glow)
   let online = null;           // an Online game: { me: WHITE|BLACK, id } (the other player's moves arrive from online.js)
   let remoteApplying = false, remoteEnding = false;
@@ -97,6 +98,7 @@
   let pendingBotGuess = -1;    // Guess Who: the square the computer will guess after the move it is making
   let spawnSel = 0;            // Chess Royale: the piece type picked in the spawn tray (0 = none)
   let pz = null;               // a Popular puzzle being played: { id, name, goal, n } (n = moves to mate, 0 = just win)
+  let vmode = null, vparams = null;   // Online > Custom: the gamemode of an online or 'custom' game and its settings (see chess.js VARIANTS)
   let startFen = null;         // a custom starting position (FEN) from the position editor, or null for the normal start
   let moveAt = [];             // when each move was played, in ms since the first move (timed replays)
   let moveClk = [];            // both clocks after each move (timed games)
@@ -112,8 +114,11 @@
   const branch = () => mode === 'tas';   // TAS lets you undo, then play something else from there
   const humanTurn = () => !ai || playBoth || game.turn === ai.human;
   const engineMode = (m) => (m === 'secret' ? 'secret' : m === 'snail' ? 'snail' : m === 'gamble' ? 'gamble' : m === 'guess' ? 'guess' : m === 'royale' ? 'royale' : 'basic');
-  const isTwist = () => mode === 'snail' || mode === 'gamble' || mode === 'guess' || mode === 'royale';   // custom rules the move-strength labels, Analyze and Export know nothing about
-  const MODE_LABEL = { basic: 'Classic', secret: 'Secret Queen', tas: 'Sandbox', bullet: 'Bullet', rapid: 'Rapid', snail: 'Immortal Snail', online: 'Online', gamble: 'Gamblite Chess', guess: 'Guess Who Chess', royale: 'Chess Royale' };
+  const eMode = (m) => ((m === 'online' || m === 'custom') && vmode ? vmode : engineMode(m === 'custom' ? 'basic' : m));   // the rules the engine plays by
+  const isVar = () => !!game.vm;
+  const variantName = (v) => { const x = Chess.VARIANTS.find((y) => y[0] === v); return x ? x[1] : 'Custom gamemode'; };
+  const isTwist = () => (G && G.vm && !['c960', 'fen'].includes(G.mode)) || mode === 'snail' || mode === 'gamble' || mode === 'guess' || mode === 'royale';   // custom rules the move-strength labels, Analyze and Export know nothing about
+  const MODE_LABEL = { basic: 'Classic', secret: 'Secret Queen', tas: 'Sandbox', bullet: 'Bullet', rapid: 'Rapid', snail: 'Immortal Snail', online: 'Online', custom: 'Custom gamemode', gamble: 'Gamblite Chess', guess: 'Guess Who Chess', royale: 'Chess Royale' };
   const LEVEL_LABEL = { dumb: 'Dumb', easy: 'Easy', medium: 'Medium', hard: 'Hard', insane: 'Insane', godly: 'Godly', patricia: 'Patricia', brilliant: 'Mr. Brilliant', stockfish: 'Stockfish Lite', stockfishfull: 'Stockfish', copycat: 'CopyCat' };
   const cname = (c) => (c === WHITE ? 'White' : 'Black');
   const nameOf = (c) => viewNames[c] || cname(c);
@@ -496,6 +501,7 @@
     paintPreTint();
     drawPre();
     drawAnn();
+    drawHint();
     hvClear();
   }
 
@@ -545,6 +551,7 @@
     if (m.flags === 4 || m.flags === 8) {
       const r = rankOf(m.from);
       pairs.push(m.flags === 4 ? [sq(7, r), sq(5, r)] : [sq(0, r), sq(3, r)]);
+      if (G.mode === 'c960') { pairs.length = 0; pairs.push([m.from, sq(m.flags === 4 ? 6 : 2, r)], [m.to, sq(m.flags === 4 ? 5 : 3, r)]); }   // Chess960: the move is written king-takes-rook
     }
     for (const [a, b] of pairs) reverse ? slide(b, a) : slide(a, b);
   }
@@ -817,7 +824,8 @@
     { // take-back: Classic online games only, right after your own move
       const mine = online && phase === 'play' && !clock && mode !== 'pbattle' && fullMoves.length && ((fullMoves.length % 2 === 1) === (online.me === WHITE));
       $('#oundo-btn').classList.toggle('hidden', !mine);
-      $('#react-bar').classList.toggle('hidden', !(online && phase === 'over'));
+      $('#react-bar').classList.toggle('hidden', !(online && (phase === 'over' || phase === 'play') && mode !== 'pbattle'));
+      $('#react-bar').classList.toggle('live', phase === 'play');
       if (!online || phase !== 'play') { const pr = $('#presence'); if (pr) pr.classList.add('hidden'); }
     }
     $('#reset-btn').classList.toggle('hidden', !!online);
@@ -880,12 +888,22 @@
     renderOdds();
     renderRoyale();
     renderGuessBar();
+    liveSnap();
   }
 
   /* ------------------------------------------------------------- menu/start */
   document.querySelectorAll('.mode[data-mode="basic"], .mode[data-mode="secret"], .mode[data-mode="snail"], .mode[data-mode="gamble"], .mode[data-mode="guess"], .mode[data-mode="royale"], .mode[data-mode="tas"], .mode[data-mode="bullet"], .mode[data-mode="rapid"]').forEach((b) => {
     b.addEventListener('click', () => chooseMode(b.dataset.mode));
   });
+
+  /** The Classic screen's Play popup: how = 'local' (2 players) or 'bot'; m = basic | bullet | rapid; tc = { base, inc } seconds or null for untimed. */
+  function classicPlay(how, m, tc) {
+    startFen = null; pz = null;
+    guardSlots(() => {
+      pendingTc = tc ? { base: tc.base, inc: tc.inc } : null;
+      if (how === 'local') { closeSheet(); startGame(m, false, null); } else askDifficulty(m);
+    });
+  }
 
   function chooseMode(m) { startFen = null; pz = null; guardSlots(() => chooseMode2(m)); }
   function chooseMode2(m) {
@@ -897,7 +915,7 @@
 
   /* Bullet: 1 or 3 minutes, no extra time. Rapid: 5 or 10 minutes plus 2 seconds every move. */
   function askClock(m) {
-    const opts2 = m === 'bullet' ? [[60, 0, '1 minute', 'Each side gets 1 minute. No extra time.'], [180, 0, '3 minutes', 'Each side gets 3 minutes. No extra time.']]
+    const opts2 = m === 'bullet' ? [[10.1, 0.1, 'Super Bullet (10.1s + 0.1s)', 'Each side gets 10.1 seconds and 0.1 seconds back every move. Premoves are your friend.'], [60, 0, '1 minute', 'Each side gets 1 minute. No extra time.'], [180, 0, '3 minutes', 'Each side gets 3 minutes. No extra time.']]
       : [[300, 2, '5 minutes + 2', 'Each side gets 5 minutes and 2 seconds back every move.'], [600, 2, '10 minutes + 2', 'Each side gets 10 minutes and 2 seconds back every move.']];
     openSheet(`<h2>${m === 'bullet' ? 'Bullet' : 'Rapid'}<span class="sub">Pick the time for each side.</span></h2>
       <div class="stack">${opts2.map((o, i) => `<button class="btn big tc" data-i="${i}"><b>${o[2]}</b>${lastOf('tc:' + m) === i ? LAST_TAG : ''}<small>${o[3]}</small></button>`).join('')}<button class="btn" id="tc-x">Cancel</button></div>`, true);
@@ -997,7 +1015,8 @@
     copyOff = false;
     gameStart = Date.now();
     mode = m;
-    game.mode = engineMode(m);
+    game.mode = eMode(m);
+    game.vp = vmode && game.mode === vmode ? vparams : null;
     game.reset();
     if (startFen) { if (game.loadFen(startFen)) startFen = null; else game.problems(); }
     clearInterval(revealTimer); revealSet = new Set(); revealAll = false; viewSide = 0; arrs = {};
@@ -1040,11 +1059,11 @@
     initialSecrets = { [WHITE]: -1, [BLACK]: -1 };
     resigned = null;
     lastTick = 0;
-    clock = pendingTc && (m === 'bullet' || m === 'rapid' || m === 'online') ? { [WHITE]: pendingTc.base * 1000, [BLACK]: pendingTc.base * 1000, inc: pendingTc.inc * 1000, base: pendingTc.base * 1000 } : null;
+    clock = pendingTc && (m === 'bullet' || m === 'rapid' || m === 'online') ? { [WHITE]: Math.round(pendingTc.base * 1000), [BLACK]: Math.round(pendingTc.base * 1000), inc: Math.round(pendingTc.inc * 1000), base: Math.round(pendingTc.base * 1000) } : null;
     sidesCtx = { w: 'p1', b: 'p2' };
     coverEl.classList.add('hidden');
     document.documentElement.classList.toggle('is-tas', m === 'tas');
-    $('#mode-title').textContent = pz ? pz.name + ' · ' + pz.goal : startFen && m !== 'guess' ? 'Custom position' : MODE_LABEL[m];
+    $('#mode-title').textContent = pz ? pz.name + ' · ' + pz.goal : startFen && m !== 'guess' ? 'Custom position' : (m === 'online' || m === 'custom') && vmode ? variantName(vmode) : MODE_LABEL[m];
   }
 
   /** Starts a normal Classic game against a computer level (used by the first-time lesson). */
@@ -1078,7 +1097,7 @@
       opts: { autoFlip: opts.autoFlip, hints: opts.hints, ratings: opts.ratings }, ratings: ratings.slice(), secrets: initialSecrets,
       moves: fullMoves.map((m) => Object.assign({}, m)), sans: sans.slice(), viewPly, playBoth, date: Date.now(),
       clock: clock ? { w: clock[WHITE], b: clock[BLACK], inc: clock.inc, base: clock.base } : null,
-      fen: startFen, pz: pz, mods: Array.from(classicMods), ped: pend && pend.map.size ? { c: pend.castling, e: Array.from(pend.map, ([sq, v]) => [sq, v.old, v.nw]) } : null, at: moveAt.slice(), clk: moveClk.slice(), gfirst: gFirst || null,
+      vm: vmode, vp: vparams, fen: startFen, pz: pz, mods: Array.from(classicMods), ped: pend && pend.map.size ? { c: pend.castling, e: Array.from(pend.map, ([sq, v]) => [sq, v.old, v.nw]) } : null, at: moveAt.slice(), clk: moveClk.slice(), gfirst: gFirst || null,
       gw: mode === 'guess' ? { marks: { w: marks[WHITE], b: marks[BLACK] }, last: gwLast } : null,
     });
   }
@@ -1089,6 +1108,7 @@
     if (d.mode === 'foresight') d = Object.assign({}, d, { mode: 'basic' });   // Foresight Chess was removed: an old save carries on as a normal game
     startFen = d.fen || null;
     pz = d.pz || null;
+    vmode = d.vm || null; vparams = d.vp || null;
     freshGame(d.mode);
     session.use(d.id);
     classicMods = new Set(d.mods || []);
@@ -1958,7 +1978,7 @@
     });
     preFresh = false;
   }
-  window.addEventListener('resize', () => { if (pre.length) drawPre(); drawAnn(); });
+  window.addEventListener('resize', () => { if (pre.length) drawPre(); drawAnn(); drawHint(); });
 
   /* ------------------------------------------------------------ Free annotations (right-click or Shift+click to draw)
    * Right-drag draws an arrow, right-click toggles a square highlight. Colour: plain = green, Shift = red, Ctrl/Cmd = blue, Alt = yellow.
@@ -2274,6 +2294,13 @@
     selected = s;
     spawnSel = 0;
     legalTargets = game.legalMovesFrom(s);
+    if (game.mode === 'c960') {   // Chess960 castling is the king taking its own rook; tapping the square the king lands on works too
+      for (const m of legalTargets.slice()) {
+        if (m.flags !== 4 && m.flags !== 8) continue;
+        const kTo = (m.flags === 4 ? 6 : 2) + (m.from & 0x70);
+        if (kTo !== m.from && !legalTargets.some((x) => x.to === kTo)) legalTargets.push(Object.assign({}, m, { to: kTo, real: m }));
+      }
+    }
     renderAll();
   }
 
@@ -2288,6 +2315,7 @@
   }
 
   function doMove(m) {
+    if (m.real) m = m.real;   // Chess960: a tap on the king's castling square stands for the king-takes-rook move
     if (branch() && viewPly < sans.length) {
       // TAS: playing from an earlier point throws away the old future (redo is off until you undo again)
       sans.length = viewPly;
@@ -2316,7 +2344,8 @@
       game.ep = -1;
       m.nx = game.turn;
     }
-    const check = game.inCheck(game.turn);
+    const vres = game.vm ? game.vResult() : null;   // a custom gamemode may just have been won
+    const check = vres ? false : game.inCheck(game.turn);
     const gcheck = check && mode !== 'guess';   // Guess Who does not announce check
     const canMove = game.hasLegalMove();
     let full = san + (check ? (canMove ? '+' : '#') : '');
@@ -2347,15 +2376,16 @@
     if (h.sn) animateSnails(h, false);
 
     if (mode === 'guess') { moveMarks(m, mover); gwLast = ''; guessAfterMove(mover, h); return; }
-    let end = null;
-    if (game.snailKilled) end = 'snail';
+    let end = null, endBy = mover;
+    if (vres) { end = vres === '1/2-1/2' ? 'vdraw' : 'variant'; endBy = vres === '1-0' ? WHITE : BLACK; }
+    else if (game.snailKilled) end = 'snail';
     else if (game.kingTaken) end = 'king';
     else if (!canMove) end = check ? 'mate' : 'stalemate';
-    else if (!isTwist() && insufficientMaterial()) end = 'material';
+    else if (!isTwist() && !game.vm && insufficientMaterial()) end = 'material';
     else if (game.halfmove >= 100) end = 'fifty';
     else if (posKeys.filter((k) => k === posKeys[viewPly]).length >= 3) end = 'repeat';
 
-    if (end) { endGame(end, mover); clearSession(); }
+    if (end) { endGame(end, endBy); clearSession(); }
     else if (pzSpent(mover)) { saveSession(); }
     else { saveSession(); updateStatus(); syncFlip(true, 380); maybeAI(); refreshHint(); preRunSoon(); }
   }
@@ -2406,16 +2436,16 @@
     spawnSel = 0; gwStage = ''; markTool = '';
     coverEl.classList.add('hidden');
     clearTimeout(flipTimer);
-    const why = { gcapture: 'Selected piece captured', gright: 'Guessed the selected piece', gwrong: 'Guessed the wrong piece', agreed: 'Draw agreed', stalemate: 'Stalemate', material: 'Insufficient material', fifty: '50-move rule', repeat: 'Threefold repetition', snail: 'Both snails reached a king' };
+    const why = { gcapture: 'Selected piece captured', gright: 'Guessed the selected piece', gwrong: 'Guessed the wrong piece', agreed: 'Draw agreed', stalemate: 'Stalemate', material: 'Insufficient material', fifty: '50-move rule', repeat: 'Threefold repetition', snail: 'Both snails reached a king', vdraw: game.vWhy || 'Draw' };
     let winner = type === 'mate' || type === 'resign' || type === 'time' || type === 'abandon' ? mover : null;   // mover = the side that won (or that gave the mate)
     if (type === 'king') winner = game.kingTaken === WHITE ? BLACK : WHITE;
-    if (type === 'gcapture' || type === 'gright') winner = mover;
+    if (type === 'gcapture' || type === 'gright' || type === 'variant') winner = mover;
     if (type === 'gwrong') winner = mover === WHITE ? BLACK : WHITE;
     if (type === 'snail') winner = game.snailKilled === 24 ? null : game.snailKilled === WHITE ? BLACK : WHITE;   // the side whose snail reached its king loses
     const loser = winner === WHITE ? BLACK : WHITE;
     if (type === 'resign') resigned = loser;
     over = winner != null
-      ? { title: nameOf(winner) + ' wins', sub: type === 'mate' ? 'Checkmate' : type === 'gcapture' ? nameOf(loser) + "'s selected piece was captured" : type === 'gright' ? nameOf(winner) + ' guessed the selected piece' : type === 'gwrong' ? nameOf(loser) + ' guessed the wrong piece' : type === 'snail' ? nameOf(loser) + "'s snail reached their king" : type === 'king' ? nameOf(loser) + "'s king was captured" : type === 'resign' ? nameOf(loser) + ' forfeited' : type === 'abandon' ? nameOf(loser) + ' disconnected' : nameOf(loser) + ' ran out of time', result: winner === WHITE ? '1-0' : '0-1' }
+      ? { title: nameOf(winner) + ' wins', sub: type === 'mate' ? 'Checkmate' : type === 'gcapture' ? nameOf(loser) + "'s selected piece was captured" : type === 'gright' ? nameOf(winner) + ' guessed the selected piece' : type === 'gwrong' ? nameOf(loser) + ' guessed the wrong piece' : type === 'snail' ? nameOf(loser) + "'s snail reached their king" : type === 'king' ? nameOf(loser) + "'s king was captured" : type === 'variant' ? (game.vWhy || 'Variant win') : type === 'resign' ? nameOf(loser) + ' forfeited' : type === 'abandon' ? nameOf(loser) + ' disconnected' : nameOf(loser) + ' ran out of time', result: winner === WHITE ? '1-0' : '0-1' }
       : { title: 'Draw', sub: why[type], result: '1/2-1/2' };
     if (pz) {
       const won = winner != null && !!ai && winner === ai.human;
@@ -2424,7 +2454,7 @@
       else if (won && pz.src === 'community' && window.LP.community) window.LP.community.done(pz.id);
       else if (won && !pz.src && window.LP.popular) window.LP.popular.done(pz.id);
     }
-    const unranked = !!startFen || classicMods.size > 0;   // custom positions and games that used a mod do not count for ratings, rewards or the leaderboard
+    const unranked = !!startFen || !!game.vm || classicMods.size > 0;   // custom positions and games that used a mod do not count for ratings, rewards or the leaderboard
     const lb = type === 'mate' && !unranked && !online ? recordWin(mover) : null;
     if (online && !remoteEnding && window.LP.onlineNet) window.LP.onlineNet.report(over.result, type);
     const Pf = window.LP.profile;
@@ -2453,7 +2483,7 @@
     fx(winner == null ? 'draw' : ai && !bots && winner !== ai.human ? 'lose' : 'win');
     liveEnd(type);
     if (!bots && !pz && window.LP.feedback) { try { window.LP.feedback.matchDone(); } catch (e) { /* ignore */ } }
-    if (window.LP.history && fullMoves.length) { try { const d = buildReplayData(); window.LP.history.add({ kind: 'chess', id: d.id, mode: d.mode2 || mode, modeLabel: pz ? 'Puzzle · ' + pz.name : startFen && mode !== 'guess' ? 'Custom position' : MODE_LABEL[mode], names: d.names, level: d.level, bots: !!bots, human: d.human, result: d.result, winner: d.winner, dur: Math.round((Date.now() - (playStart || Date.now())) / 1000) || 0, moves: Math.ceil(fullMoves.length / 2), timed: !!clock, modded: classicMods.size ? Array.from(classicMods) : undefined, payload: d }); } catch (e) { /* history is best effort */ } }
+    if (window.LP.history && fullMoves.length) { try { const d = buildReplayData(); window.LP.history.add({ kind: 'chess', id: d.id, mode: d.mode2 || mode, modeLabel: pz ? 'Puzzle · ' + pz.name : game.vm ? variantName(game.mode) : startFen && mode !== 'guess' ? 'Custom position' : MODE_LABEL[mode], names: d.names, level: d.level, bots: !!bots, human: d.human, result: d.result, winner: d.winner, dur: Math.round((Date.now() - (playStart || Date.now())) / 1000) || 0, moves: Math.ceil(fullMoves.length / 2), timed: !!clock, modded: classicMods.size ? Array.from(classicMods) : undefined, payload: d }); } catch (e) { /* history is best effort */ } }
     const revealMs = mode === 'guess' ? guessReveal() : 0;
     setTimeout(() => {
       if (phase !== 'over' || !sheetBg.classList.contains('hidden')) return;
@@ -2466,8 +2496,9 @@
   $('#react-bar').addEventListener('click', (e) => {
     const b = e.target.closest('[data-rx]');
     if (!b || !online || !window.LP.onlineNet) return;
-    window.LP.onlineNet.react(b.dataset.rx);
-    onlineReacted(b.dataset.rx, true);
+    rxSeq++;
+    window.LP.onlineNet.react(b.dataset.rx + ':' + rxSeq);
+    onlineReacted(b.dataset.rx + ':' + rxSeq, true);
   });
   $('#draw-btn').addEventListener('click', () => { if (online && phase === 'play' && window.LP.onlineNet) window.LP.onlineNet.offerDraw(); });
 
@@ -2519,7 +2550,7 @@
         ${pz ? '<button class="btn" id="ov-list">' + (pz.src === 'test' ? 'Back to editor' : pz.src === 'community' ? 'Community puzzles' : 'Puzzle list') + '</button>' : ''}
       </div>
       ${over.elo ? `<p class="elo-line ${over.elo.delta >= 0 ? 'up' : 'down'}"><span>${over.elo.label || MODE_LABEL[mode]} rating</span><b>${over.elo.after}</b><em>${over.elo.delta >= 0 ? '+' : '\u2212'}${Math.abs(over.elo.delta)}</em></p>` : ''}
-      <p class="note">${over.note ? esc(over.note) + '<br>' : ''}${tas ? 'Sandbox games are not saved or analysed.' : isTwist() ? MODE_LABEL[mode] + ' games are saved in History, but Analyze does not support them.' : 'Analyzing saves the game. You can open it again any time from Analyze in the Train section.'}</p>`);
+      <p class="note">${over.note ? esc(over.note) + '<br>' : ''}${tas ? 'Sandbox games are not saved or analysed.' : isTwist() ? (G.vm ? variantName(G.mode) : MODE_LABEL[mode]) + ' games are saved in History, but Analyze does not support them.' : 'Analyzing saves the game. You can open it again any time from Analyze in the Train section.'}</p>`);
     const an = $('#ov-analyze');
     if (an) an.onclick = () => {
       const data = buildReplayData();
@@ -2544,7 +2575,7 @@
       v: 1,
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       date: Date.now(),
-      mode: engineMode(mode),
+      mode: eMode(mode), vp: game.vp || null,
       tas: isTas(),
       level: ai ? ai.level : null,
       names: { w: names[WHITE], b: names[BLACK] },
@@ -2555,6 +2586,7 @@
       result: over ? over.title + ' · ' + over.sub : '',
       mode2: mode,
       human: ai ? (ai.human === WHITE ? 'w' : 'b') : null,
+      onl: online ? { me: online.me === WHITE ? 'w' : 'b', oe: online.oppElo || 0 } : null,
       resigned: resigned == null ? null : (resigned === WHITE ? 'w' : 'b'),
       winner: over && over.result === '1-0' ? 'w' : over && over.result === '0-1' ? 'b' : null,
       clock: clock ? { base: clock.base, inc: clock.inc } : null,
@@ -2619,37 +2651,92 @@
   /* TAS hint: the 3 best moves for the side to move, numbered 1-3 on the board */
   $('#hint-btn').addEventListener('click', () => { if (game.mode === 'basic' && window.LP.engineChoice) window.LP.engineChoice().then(() => runHint(false)); else runHint(false); });
   /** Show the hint. `viaMod`: started from the mod menu in a Classic game (also works in 2-player games and in games from other modes' rules). */
+  /* ---- hint display: eval chips, the best-move arrow, one-tap cycling, numbered mate arrows, engine label ---- */
+  const hintStyle = () => (window.LP.prefs && window.LP.prefs.get('hintStyle')) || 'num';   // 'min' | 'num' | 'full'
+  const hintMax = (d) => (d.mate ? 1 : hintStyle() === 'num' ? 2 : 1);                       // presses before it clears
+  function hintSanOf(m) {
+    let san = game.moveToSan(m);
+    game.makeMove(m);
+    if (game.inCheck(game.turn)) san += game.hasLegalMove() ? '+' : '#';
+    game.unmakeMove();
+    return fmt(san);
+  }
+  /** The engine's score for the side to move, written from White's side: +0.4, -1.2, +M3. */
+  function hintEvText(sc, turn) {
+    if (sc == null) return '';
+    const w = turn === WHITE ? sc : -sc, big = 100000 - 200;
+    if (Math.abs(sc) > big) return (w > 0 ? '+' : '-') + 'M' + Math.max(1, Math.ceil((100000 - Math.abs(sc)) / 2));
+    return (w > 0 ? '+' : w < 0 ? '-' : '') + Math.abs(w / 100).toFixed(1);
+  }
+  function hintShow(d, stage) {
+    if (!d || !d.list.length) return;
+    const st = hintStyle();
+    selected = -1;
+    legalTargets = [];
+    const n = d.mate ? 1 : (st === 'full' || stage >= 2) ? Math.min(3, d.list.length) : 1;
+    hintStage = stage;
+    hintMoves = d.list.slice(0, n);
+    if (d.mate) hintMoves.mate = d.mate.steps;
+    else if (d.brill && hintMoves.includes(d.brill)) hintMoves.brill = d.brill;
+    hintFresh = true;
+    renderBoard();
+    updateHintGlow();
+    if (d.mate) setStatus('Forced mate in ' + d.mate.n + ': follow the orange arrows in order');
+    else {
+      const more = st === 'num' && n === 1 && d.list.length > 1 ? '   (tap Hint again for the next best)' : '';
+      setStatus((hintMoves.brill ? 'Brilliant move in blue. ' : '') + (n > 1 ? 'Best ' + n + ' moves: ' : 'Best move: ') + hintMoves.map((m, i) => (n > 1 ? (i + 1) + '. ' : '') + hintSanOf(m)).join('   ') + more);
+    }
+  }
+  function hintClear() { hintMoves = []; hintStage = 0; hintFresh = false; renderBoard(); updateHintGlow(); updateStatus(); }
+  /** The hint's own layer: chips under the status line, a green arrow for the best move, numbered orange arrows (revealed one by one) for a mate. */
+  function drawHint() {
+    const wrap = boardEl.parentElement;
+    let svg = wrap.querySelector('.hint-ann'), chips = $('#hint-chips');
+    const d = hintData;
+    const live = hintMoves.length && d && G === game && phase !== 'replay' && positionKey(game) === d.key;
+    if (!live) { if (svg) svg.remove(); if (chips) chips.classList.add('hidden'); hintFresh = false; return; }
+    const st = hintStyle();
+    if (!chips) { chips = document.createElement('div'); chips.id = 'hint-chips'; chips.className = 'hint-chips hidden'; statusEl.insertAdjacentElement('afterend', chips); }
+    if (st === 'min') chips.classList.add('hidden');
+    else {
+      const col = ['#6fd08c', '#8fd3e8', '#c9a0ff'];
+      chips.innerHTML = hintMoves.map((m, i) => `<span class="rv-pt hc" style="--c:${col[i] || '#8fd3e8'}"><small>${i + 1}. ${esc(hintSanOf(m))}</small><b>${esc(d.mate ? 'Mate in ' + d.mate.n : hintEvText(d.scores && d.scores[i], d.turn))}</b></span>`).join('') + (d.label ? `<span class="hint-eng">${esc(d.label)}</span>` : '');
+      chips.classList.remove('hidden');
+    }
+    if (!svg) { svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('class', 'hint-ann'); wrap.appendChild(svg); }
+    const w = wrap.getBoundingClientRect();
+    svg.setAttribute('viewBox', '0 0 ' + w.width + ' ' + w.height);
+    const box = (s) => { const el = squareEls[s]; if (!el) return null; const r = el.getBoundingClientRect(); return { w: r.width, cx: r.left - w.left + r.width / 2, cy: r.top - w.top + r.height / 2 }; };
+    const arrow = (from, to, col, extra, num, k) => {
+      const A = box(from), Z = box(to); if (!A || !Z) return '';
+      const dx = Z.cx - A.cx, dy = Z.cy - A.cy, dist = Math.hypot(dx, dy) || 1, ux = dx / dist, uy = dy / dist, u = A.w;
+      const hl = u * 0.36, hw = u * 0.22, tipx = Z.cx - ux * u * 0.08, tipy = Z.cy - uy * u * 0.08, bx = tipx - ux * hl, by = tipy - uy * hl, sx = A.cx + ux * u * 0.2, sy = A.cy + uy * u * 0.2;
+      const bub = num ? `<circle cx="${(sx + bx) / 2}" cy="${(sy + by) / 2}" r="${u * 0.2}" fill="#1c0a00" opacity=".85"/><text x="${(sx + bx) / 2}" y="${(sy + by) / 2}" fill="#ffb066" font-size="${u * 0.26}" font-weight="800" text-anchor="middle" dominant-baseline="central">${num}</text>` : '';
+      return `<g class="${extra}"${hintFresh && k != null ? ` style="animation-delay:${k * 0.8}s"` : ''}><line x1="${sx}" y1="${sy}" x2="${bx}" y2="${by}" stroke="${col}" stroke-width="${u * 0.17}" stroke-linecap="round"/><polygon points="${tipx},${tipy} ${bx - uy * hw},${by + ux * hw} ${bx + uy * hw},${by - ux * hw}" fill="${col}"/>${bub}</g>`;
+    };
+    let out = '';
+    const f = hintFresh ? ' fresh' : '';
+    if (hintMoves.mate) hintMoves.mate.forEach((x, k) => { out += arrow(x.from, x.to, 'rgba(249,115,22,.9)', 'hint-step' + f, x.n, k); });
+    else out += arrow(hintMoves[0].from, hintMoves[0].to, 'rgba(60,190,90,.92)', 'hint-best' + f, 0, 0);
+    svg.innerHTML = out;
+    hintFresh = false;
+  }
+
+  /** Show the hint. `viaMod`: started from the mod menu in a Classic game (also works in 2-player games and in games from other modes' rules). */
   function runHint(viaMod) {
     if (phase !== 'play' || aiBusy || !humanTurn() || (!viaMod && !ai)) return;
     if (viaMod) classicMods.add('Hint');
     const key = positionKey(game);
-    const sanOf = (m) => {
-      let san = game.moveToSan(m);
-      game.makeMove(m);
-      if (game.inCheck(game.turn)) san += game.hasLegalMove() ? '+' : '#';
-      game.unmakeMove();
-      return fmt(san);
-    };
-    const evText = (sc) => {   // the engine's score for the side to move, written from White's side: +0.4, -1.2, M3
-      if (sc == null) return '';
-      const w = game.turn === WHITE ? sc : -sc, big = 100000 - 200;
-      if (Math.abs(sc) > big) return (w > 0 ? '+' : '-') + 'M' + Math.max(1, Math.ceil((100000 - Math.abs(sc)) / 2));
-      return (w > 0 ? '+' : w < 0 ? '-' : '') + Math.abs(w / 100).toFixed(1);
-    };
-    const show = (list, mate, brill, scores) => {
-      if (!list.length) return;
-      selected = -1;
-      legalTargets = [];
-      hintMoves = list.slice(0, mate ? 1 : 3);
-      if (mate) hintMoves.mate = mate.steps;
-      else if (brill) hintMoves.brill = brill;
-      renderBoard();
-      updateHintGlow();
-      if (mate) setStatus('Forced mate in ' + mate.n + ': play the orange squares in order');
-      else setStatus((brill ? 'Brilliant move in blue. ' : '') + (list.length > 1 ? 'Best 3 moves: ' : 'Best move: ') + hintMoves.map((m, i) => `${i + 1}. ${sanOf(m)}${scores && scores[i] != null ? ' (' + evText(scores[i]) + ')' : ''}`).join('   '));
-    };
+    const have = hintData && hintData.key === key ? hintData : null;
+    if (have) {   // the same position again: each press goes one step deeper, then clears
+      if (hintMoves.length) { const next = hintStage + 1; if (next > hintMax(have)) hintClear(); else hintShow(have, next); }
+      else hintShow(have, 1);
+      return;
+    }
+    let engLabel = 'Built-in engine';
+    const keep = (list, mate, brill, scores) => { hintData = { key, turn: game.turn, list, mate, brill, scores, label: engLabel }; hintShow(hintData, 1); };
     const mate = hintCache && hintCache.key === key && hintCache.result ? hintCache.result : (window.findMateLine ? window.findMateLine(game, 8, 1500) : null);   // (the quick check that lights the button is shallow; pressing Hint looks deeper)
-    if (mate) { show([mate.move], mate, null, [100000 - 2 * mate.n + 1]); return; }
+    if (mate) { keep([mate.move], mate, null, [100000 - 2 * mate.n + 1]); return; }
     const tok = ++aiToken;       // blocks play while the search runs, and is cancelled by anything that resets the game
     aiBusy = true;
     updateControls();
@@ -2666,7 +2753,7 @@
           aiBusy = false;
           updateControls();
           if (phase !== 'play' || positionKey(game) !== key) return;
-          show(list, null, brill, scores);
+          keep(list, null, brill, scores);
         };
         // is one of the three a brilliant move? check them one at a time so the page stays alive
         let i = 0;
@@ -2695,8 +2782,9 @@
           top.l.pv.forEach((u, k) => { const m = SF.legalOf(game, u); if (!m) return; if (k % 2 === 0) steps.push({ from: m.from, to: m.to, n: steps.length + 1 }); game.makeMove(m); made++; });
           while (made-- > 0) game.unmakeMove();
           aiBusy = false; updateControls();
-          if (phase === 'play' && positionKey(game) === key && steps.length) { show([top.move], { n: Math.ceil((MATE - top.l.score + 1) / 2), steps }, null, [top.l.score]); return; }
+          if (phase === 'play' && positionKey(game) === key && steps.length) { engLabel = (SF.name || 'Stockfish') + ' · depth ' + (top.l.depth || r.depth || '?'); keep([top.move], { n: Math.ceil((MATE - top.l.score + 1) / 2), steps }, null, [top.l.score]); return; }
         }
+        engLabel = (SF.name || 'Stockfish') + ' · depth ' + (top.l.depth || r.depth || '?');
         onRes(lines.map((x) => ({ move: x.move, score: x.l.score })));
       }, () => { if (tok === aiToken) searchTop(game, 'hint', game.turn, null, onRes); });
     } else searchTop(game, 'hint', game.turn, null, onRes);
@@ -2746,6 +2834,7 @@
     const timed = !!(data.clock && data.at && data.at.length === data.moves.length && data.moves.length);
     replay = { data, idx: 0, speed: 1, timer: null, from, prevFlipped: flipped, timed, t: 0, total: timed ? Math.max(1000, data.endAt || data.at[data.at.length - 1] + 1000) : 0 };
     rgame.mode = data.mode;
+    rgame.vp = data.vp || null;
     rgame.reset();
     if (data.fen) rgame.loadFen(data.fen);
     if (data.gfirst) rgame.turn = data.gfirst;
@@ -2930,17 +3019,19 @@
    * as long as you are at the newest move. */
   let spec = null;   // { g: scratch board, ucis: [], data }
   const uciOf = (m) => alg(m.from) + alg(m.to) + (({ 5: 'q', 4: 'r', 3: 'b', 2: 'n' })[m.promo] || '');
-  const WHY = { mate: 'Checkmate', resign: 'Resignation', timeout: 'Out of time', time: 'Out of time', abandon: 'Disconnected', agreed: 'Draw agreed', stalemate: 'Stalemate', material: 'Insufficient material', fifty: '50-move rule', repeat: 'Threefold repetition' };
+  const WHY = { variant: 'Gamemode win', mate: 'Checkmate', resign: 'Resignation', timeout: 'Out of time', time: 'Out of time', abandon: 'Disconnected', agreed: 'Draw agreed', stalemate: 'Stalemate', material: 'Insufficient material', fifty: '50-move rule', repeat: 'Threefold repetition' };
   /** s = what the server says about the game: { names, moves: ['e2e4', ...], status, result, reason, clocks, now, lm }. opts: { flip } on the first call. */
+  const specChess = (s) => { const g = new Chess(); if (s && s.vm) { g.mode = s.vm; g.vp = Chess.vpParse(s.vm, s.vp); g.reset(); } return g; };   // the rules a watched game is played by
   function spectateSet(s, opts) {
     if (!s || !Array.isArray(s.moves)) return;
     const first = !spec;
     if (first) {
-      spec = { g: new Chess(), ucis: [], data: { v: 1, id: 'watch', date: Date.now(), mode: 'basic', tas: false, level: null, names: { w: 'White', b: 'Black' }, secrets: { w: -1, b: -1 }, moves: [], ratings: null, sans: [], result: '', mode2: 'basic', human: null, resigned: null, winner: null, clock: null, fen: null, gfirst: null, at: null, clk: null, endAt: null } };
+      spec = { g: specChess(s), ucis: [], data: { v: 1, id: 'watch', date: Date.now(), mode: 'basic', tas: false, level: null, names: { w: 'White', b: 'Black' }, secrets: { w: -1, b: -1 }, moves: [], ratings: null, sans: [], result: '', mode2: 'basic', human: null, resigned: null, winner: null, clock: null, fen: null, gfirst: null, at: null, clk: null, endAt: null } };
     }
+    if (first) { spec.data.mode = spec.data.mode2 = s.vm || 'basic'; spec.data.vp = s.vm ? Chess.vpParse(s.vm, s.vp) : null; }
     const d = spec.data, list = s.moves;
     if (!(spec.ucis.length <= list.length && spec.ucis.every((u, i) => u === list[i]))) {   // a take-back: start again from the beginning
-      spec.g = new Chess(); spec.ucis = []; d.moves.length = 0; d.sans.length = 0;
+      spec.g = specChess(s); spec.ucis = []; d.moves.length = 0; d.sans.length = 0;
     }
     const before = d.moves.length;
     for (let i = spec.ucis.length; i < list.length; i++) {
@@ -3003,13 +3094,32 @@
       result = over && over.result ? over.result : '';
       reason = type === 'time' ? 'timeout' : type || '';
     }
-    window.LP.onlineApi.post({ a: 'bsync', pid: pidNow(), id: liveId, level: LEVEL_LABEL[ai.level] || ai.level, label: MODE_LABEL[mode] + (clock ? ' ' + Math.round(clock.base / 60000 * 10) / 10 + (clock.inc ? '+' + Math.round(clock.inc / 1000) : ' min') : ''),
+    window.LP.onlineApi.post({ a: 'bsync', pid: pidNow(), id: liveId, level: LEVEL_LABEL[ai.level] || ai.level, label: MODE_LABEL[mode] + (clock ? clock.base < 60000 ? ' Super Bullet' : ' ' + Math.round(clock.base / 60000 * 10) / 10 + (clock.inc ? '+' + Math.round(clock.inc / 1000) : ' min') : ''),
       side: ai.human === WHITE ? 'w' : 'b', names: { w: names[WHITE], b: names[BLACK] }, base: clock ? Math.round(clock.base / 1000) : 0, inc: clock ? Math.round(clock.inc / 1000) : 0,
       moves: fullMoves.filter((m) => !m.ask && !m.spawn).map(uciOf), clocks: clock ? { w: Math.round(clock[WHITE]), b: Math.round(clock[BLACK]) } : null,
       status: final ? 'over' : 'active', result, reason }, 2, 'bot');
   }
+  /* The modes the move-list stream above cannot show (variants, 2 players, puzzle games): send a picture of the board instead (live.js). Secrets are never sent. */
+  const sqIdx = (s) => (7 - (s >> 4)) * 8 + (s & 7);
+  function snapChess() {
+    const b = [];
+    for (let r = 7; r >= 0; r--) for (let f = 0; f < 8; f++) { const p = G.board[r * 16 + f]; b.push(p ? ((p & 24) === WHITE ? 'PNBRQK' : 'pnbrqk')[(p & 7) - 1] : '.'); }
+    const h = G.history[G.history.length - 1], mv = h && h.move;
+    const sn = { b: b.join(''), lm: mv ? [sqIdx(mv.from), sqIdx(mv.to)] : null, nm: [names[WHITE], names[BLACK]], fl: flipped ? 1 : 0, mode, st: (statusEl.textContent || '').slice(0, 80), ov: over ? (over.title || '') + (over.sub ? ' \u00b7 ' + over.sub : '') : '' };
+    if (clock) sn.ck = { w: Math.round(clock[WHITE]), b: Math.round(clock[BLACK]), run: phase === 'play' && !paused ? (G.turn === WHITE ? 'w' : 'b') : '' };
+    if (G.mode === 'royale' && G.el) sn.el = [G.el[WHITE], G.el[BLACK]];
+    if (G.mode === 'gamble' && typeof G.pW === 'number') sn.pw = Math.round(G.pW);
+    if (G.mode === 'snail') sn.sn = [G.snW >= 0 ? sqIdx(G.snW) : -1, G.snB >= 0 ? sqIdx(G.snB) : -1];
+    return sn;
+  }
+  function liveSnap() {
+    const L = window.LP.live;
+    if (!L) return;
+    if (phase !== 'play' || online || bots || mode === 'guess' || mode === 'tas' || liveWatchable()) { if (phase !== 'play' && phase !== 'over') L.end('chess'); return; }
+    L.push('chess', 'Playing ' + (MODE_LABEL[mode] || 'chess') + (pz ? ' puzzle' : ai ? ' vs ' + (LEVEL_LABEL[ai.level] || ai.level) : ' (2 players)'), snapChess, 600);
+  }
   /** The game is over, or you left it: tell the server so it stops showing it as live. */
-  function liveEnd(type) { if (liveId) { liveSync(true, type); liveId = null; } }
+  function liveEnd(type) { if (liveId) { liveSync(true, type); liveId = null; } if (window.LP.live) window.LP.live.end('chess'); }
   /** For the heartbeat: what the player list says you are doing when the server cannot tell by itself (online games it knows already). */
   function liveStatus() {
     if (online) return null;
@@ -3082,7 +3192,8 @@
   /** cfg: { id, me: 'w'|'b', names: { w, b }, base, inc } (base 0 = unlimited) */
   function onlineStart(cfg) {
     startFen = null; pz = null;
-    pendingTc = cfg.base ? { base: cfg.base, inc: cfg.inc || 0 } : null;
+    vmode = cfg.vm || null; vparams = cfg.vm ? Chess.vpParse(cfg.vm, cfg.vp) : null;
+    pendingTc = cfg.base === 10 ? { base: 10.1, inc: 0.1 } : cfg.base ? { base: cfg.base, inc: cfg.inc || 0 } : null;   // a 10 second base is Super Bullet
     freshGame('online');
     phase = 'names';
     ai = null; bots = null;
@@ -3147,7 +3258,8 @@
     aiToken++; aiBusy = false;
     remoteEnding = true;
     try {
-      if (winner == null) endGame(['stalemate', 'material', 'fifty', 'repeat'].includes(reason) ? reason : 'agreed', null);
+      if (winner == null) endGame(reason === 'variant' ? 'vdraw' : ['stalemate', 'material', 'fifty', 'repeat'].includes(reason) ? reason : 'agreed', null);
+      else if (reason === 'variant') endGame('variant', winner);
       else if (reason === 'timeout') endGame('time', winner);
       else if (reason === 'resign') endGame('resign', winner);
       else if (reason === 'mate') endGame('mate', winner);
@@ -3183,20 +3295,37 @@
     el.textContent = txt;
   }
   const REACTS = ['👍', '🤝', '😮', '😅', '🔥', '😂'];
+  let rxSeq = 0;
+  /** A reaction (code is "emoji:counter"): it floats up over the board, from the bottom for yours and from the top for your opponent's. */
   function onlineReacted(code, mine) {
-    const e = REACTS[+code] || '';
+    const k = parseInt(code, 10), e = REACTS[k] || '';
     if (!e) return;
     const box = $('#react-bar');
-    if (box) box.querySelectorAll('[data-rx]').forEach((b) => b.classList.toggle('on', mine && b.dataset.rx === String(code)));
-    if (!mine) { showToast('Your opponent reacted ' + e, false); const t = $('#react-them'); if (t) t.textContent = e; }
+    if (box) box.querySelectorAll('[data-rx]').forEach((b) => b.classList.toggle('on', mine && b.dataset.rx === String(k)));
+    if (!mine) { const t = $('#react-them'); if (t) t.textContent = e; if (phase === 'over') showToast('Your opponent reacted ' + e, false); }
+    const bd = $('#board');
+    if (!bd || document.documentElement.classList.contains('no-anim')) return;
+    const r = bd.getBoundingClientRect(), f = document.createElement('div');
+    f.className = 'rx-float ' + (mine ? 'mine' : 'them'); f.textContent = e;
+    f.style.left = Math.round(r.left + r.width * (0.3 + Math.random() * 0.4)) + 'px';
+    f.style.top = Math.round(mine ? r.bottom - 50 : r.top + 10) + 'px';
+    document.body.appendChild(f);
+    setTimeout(() => f.remove(), 1700);
   }
   const chessOnline = {
     undo: onlineUndo, presence: onlinePresence, reacted: onlineReacted,
     start: onlineStart, apply: onlineApply, setClocks: onlineClocks, remoteEnd: onlineEnd, toast: (t) => showToast(t, false),
     state: () => ({ phase, turn: game.turn === WHITE ? 'w' : 'b', me: online ? (online.me === WHITE ? 'w' : 'b') : '', active: !!online }),
   };
-  window.LP = { chessOnline, levelMenu, startVs, playPopular, dragHooks, openSheet, closeSheet, showPage, esc, LEVEL_LABEL, store, renderSavedList, session, applySettings, sides: () => sidesCtx, setSides: (m) => { sidesCtx = m || { w: 'p1', b: 'p2' }; }, fmt,
-    resumeChess, startReplay, playPosition, MODE_LABEL, confirmSheet, MAX_SLOTS, spectateSet, liveStatus };
+  /** Online > Custom > Play the computer: a local game of a custom gamemode (one player against the built-in computer, or two players on one device). */
+  function customLocal(vm, vp) {
+    startFen = null; pz = null;
+    vmode = vm; vparams = Chess.vpParse(vm, vp);
+    guardSlots(() => { pendingTc = null; askPlayers('custom', true); });
+  }
+  window.LP = { classicPlay, customLocal, chessOnline, levelMenu, startVs, playPopular, dragHooks, openSheet, closeSheet, showPage, esc, LEVEL_LABEL, store, renderSavedList, session, applySettings, sides: () => sidesCtx, setSides: (m) => { sidesCtx = m || { w: 'p1', b: 'p2' }; }, fmt,
+    resumeChess, startReplay, playPosition, MODE_LABEL, confirmSheet, MAX_SLOTS, spectateSet, liveStatus,
+    gameCtx: () => ({ mode, online: !!online, onlineId: online ? online.id : '', bots: !!bots, ai: !!ai, tas: isTas() }) };   // what kind of game is on screen (the in-game quest bar reads this)
   // Profile loads after app.js; pick up saved settings once it is ready
   setTimeout(loadOptsFromSettings, 0);
 })();

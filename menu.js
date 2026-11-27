@@ -1,6 +1,6 @@
 /**
  * Menu sections: each group (Classic, Custom, Train ...) opens and closes like a dropdown, and remembers how you left it.
- * Also the Suggestions page (GitHub issue or email).
+ * Also opens the Suggestions page (feedback.js sends it).
  */
 (() => {
   'use strict';
@@ -24,14 +24,6 @@
   LP.menuOpenAll = () => groups.forEach((g) => setOpen(g, true, false));
 
   /* ---- Suggestions ---- */
-  const GH = 'https://github.com/2jaxonstanley-mlp/Local-pieces/issues/new';
-  function sgLinks() {
-    const t = $('#sg-text').value.trim();
-    const body = t + '\n\n(Sent from Local Pieces)';
-    $('#sg-gh').href = GH + '?title=' + encodeURIComponent('Suggestion: ' + (t.split('\n')[0] || '').slice(0, 60)) + '&body=' + encodeURIComponent(body);
-  }
-  $('#sg-text').addEventListener('input', sgLinks);
-  sgLinks();
   const sg = document.querySelector('.mode[data-mode="suggest"]');
   if (sg) sg.addEventListener('click', () => { LP.showPage('suggest'); });
   $('#sg-back').addEventListener('click', () => LP.showPage('menu'));

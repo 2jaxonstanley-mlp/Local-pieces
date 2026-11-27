@@ -11,7 +11,7 @@
   if (!LP) return;
   const $ = (s) => document.querySelector(s);
   const esc = LP.esc;
-  const MODE_NAME = { basic: 'Classic', bullet: 'Bullet', rapid: 'Rapid' };
+  const MODE_NAME = { c960: 'Chess960', '3check': '3-Check', koth: 'King of the Hill', atomic: 'Atomic', horde: 'Horde', racing: 'Racing Kings', fen: 'Custom position', basic: 'Classic', bullet: 'Bullet', rapid: 'Rapid' };
   const pad = (n) => String(n).padStart(2, '0');
   const canExport = (d) => !!d && !d.tas && !!MODE_NAME[d.mode2 || d.mode] && (d.mode2 || d.mode) !== 'secret' && Array.isArray(d.sans) && d.sans.length > 0;
 
@@ -51,11 +51,17 @@
       ['Black', (d.names && d.names.b) || 'Black'],
       ['Result', res],
     ];
-    if (d.clock && d.clock.base) tags.push(['TimeControl', Math.round(d.clock.base / 1000) + (d.clock.inc ? '+' + Math.round(d.clock.inc / 1000) : '')]);
+    if (d.clock && d.clock.base) tags.push(['TimeControl', Math.round(d.clock.base / 100) / 10 + (d.clock.inc ? '+' + Math.round(d.clock.inc / 100) / 10 : '')]);
     if (d.resigned) tags.push(['Termination', 'abandoned']);
     else if (/ran out of time/i.test(d.result || '')) tags.push(['Termination', 'time forfeit']);
     else if (/checkmate|stalemate|repetition|insufficient|50-move/i.test(d.result || '')) tags.push(['Termination', 'normal']);
-    if (d.fen) { tags.push(['SetUp', '1']); tags.push(['FEN', d.fen]); }
+    const VN = { c960: 'Chess960', '3check': 'Three-check', koth: 'King of the Hill', atomic: 'Atomic', horde: 'Horde', racing: 'Racing Kings' };
+    let sfen = d.fen;
+    if (window.Chess && (VN[d.mode] || d.mode === 'fen')) {   // a custom gamemode: say which rules, and where the game started
+      if (VN[d.mode]) tags.push(['Variant', VN[d.mode]]);
+      try { const g = new Chess(); g.mode = d.mode; g.vp = d.vp || null; g.reset(); if (d.mode !== '3check' && d.mode !== 'koth' && d.mode !== 'atomic') sfen = g.toFen(); } catch (e) { /* keep the saved FEN */ }
+    }
+    if (sfen) { tags.push(['SetUp', '1']); tags.push(['FEN', sfen]); }
     const head = tags.map((t) => `[${t[0]} "${t[0] === 'FEN' ? t[1] : tag(t[1])}"]`).join('\n');
     const toks = [];
     const st = startOf(d);
@@ -80,7 +86,7 @@
     const rows = movePairs(d).map((p) => `${String(p.n).padStart(3)}. ${(p.w || '...').padEnd(8)}${p.b || ''}`.replace(/\s+$/, ''));
     return [
       `${nw} (White) vs ${nb} (Black)`,
-      `${name} · ${dt.d}/${dt.m}/${dt.y}` + (d.clock && d.clock.base ? ` · ${Math.round(d.clock.base / 60000 * 10) / 10} min` + (d.clock.inc ? ` + ${Math.round(d.clock.inc / 1000)}s` : '') : ''),
+      `${name} · ${dt.d}/${dt.m}/${dt.y}` + (d.clock && d.clock.base ? (d.clock.base < 60000 ? ` · Super Bullet (${Math.round(d.clock.base / 100) / 10}s + ${Math.round(d.clock.inc / 100) / 10}s)` : ` · ${Math.round(d.clock.base / 60000 * 10) / 10} min` + (d.clock.inc ? ` + ${Math.round(d.clock.inc / 1000)}s` : '')) : ''),
       d.result ? 'Result: ' + d.result : '',
       d.fen ? 'Start position: ' + d.fen : '',
       '',
