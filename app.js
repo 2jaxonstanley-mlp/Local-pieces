@@ -901,7 +901,24 @@
     startFen = null; pz = null;
     guardSlots(() => {
       pendingTc = tc ? { base: tc.base, inc: tc.inc } : null;
-      if (how === 'local') { closeSheet(); startGame(m, false, null); } else askDifficulty(m);
+      if (how === 'local') { closeSheet(); startGame(m, false, null); } else if (how === 'zero') askBot(m, WHITE, null); else askDifficulty(m);
+    });
+  }
+  /** The popup (play.js) for Secret Queen, Immortal Snail, Gamblite, Guess Who and Chess Royale: how = 'local' (2 players), 'bot' (you against the computer) or 'zero' (two computers). */
+  function variantPlay(how, m) {
+    startFen = null; pz = null;
+    guardSlots(() => {
+      pendingTc = null;
+      if (how === 'local') { closeSheet(); startGame(m, false, null); } else if (how === 'zero') askBot(m, WHITE, null); else askDifficulty(m);
+    });
+  }
+  /** The popup for a Custom gamemode (Chess960, Atomic ...) with its settings already chosen: how = 'local' or 'bot'. */
+  function customPlay(how, vm, vp) {
+    startFen = null; pz = null;
+    vmode = vm; vparams = Chess.vpParse(vm, vp);
+    guardSlots(() => {
+      pendingTc = null;
+      if (how === 'local') { closeSheet(); startGame('custom', false, null); } else askDifficulty('custom');
     });
   }
 
@@ -3323,7 +3340,7 @@
     vmode = vm; vparams = Chess.vpParse(vm, vp);
     guardSlots(() => { pendingTc = null; askPlayers('custom', true); });
   }
-  window.LP = { classicPlay, customLocal, chessOnline, levelMenu, startVs, playPopular, dragHooks, openSheet, closeSheet, showPage, esc, LEVEL_LABEL, store, renderSavedList, session, applySettings, sides: () => sidesCtx, setSides: (m) => { sidesCtx = m || { w: 'p1', b: 'p2' }; }, fmt,
+  window.LP = { classicPlay, variantPlay, customPlay, customLocal, chessOnline, levelMenu, startVs, playPopular, dragHooks, openSheet, closeSheet, showPage, esc, LEVEL_LABEL, store, renderSavedList, session, applySettings, sides: () => sidesCtx, setSides: (m) => { sidesCtx = m || { w: 'p1', b: 'p2' }; }, fmt,
     resumeChess, startReplay, playPosition, MODE_LABEL, confirmSheet, MAX_SLOTS, spectateSet, liveStatus,
     gameCtx: () => ({ mode, online: !!online, onlineId: online ? online.id : '', bots: !!bots, ai: !!ai, tas: isTas() }) };   // what kind of game is on screen (the in-game quest bar reads this)
   // Profile loads after app.js; pick up saved settings once it is ready

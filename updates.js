@@ -9,6 +9,12 @@
   const LP = (window.LP = window.LP || {});
   LP.UPDATES = {
     log: [
+    { id: 'u37', date: '2026-11-28', title: 'One Play popup for every gamemode', items: [
+      'Every gamemode now opens the same Local / Online / Bot popup, just like Classic',
+      'Bot asks 1 player or 0 players (two computers) for modes that support it, and goes straight to the computer list otherwise',
+      'Each Custom gamemode (Chess960, 3-Check, King of the Hill, Atomic, Horde, Racing Kings, Custom position) has its own card in Variants. Their Online goes straight to Create, Join or Open games for that gamemode, and you can play them against the computer or locally too',
+      'Secret Queen, Immortal Snail, Gamblite, Guess Who, Chess Royale and Air Hockey show Online as coming soon while it is being built',
+    ] },
     { id: 'u36', date: '2026-11-28', title: 'New piece set: Kirikun-sily', items: [
       'Kirikun-sily is a new Epic piece set: cute cream pieces with sunglasses, smiles and a dark set for Black. Find it in the piece crate',
     ] },

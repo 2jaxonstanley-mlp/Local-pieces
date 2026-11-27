@@ -476,7 +476,7 @@
 
   /* ------------------------------------------------------------------- Custom gamemodes: the same screens as Online, with a list of gamemodes in place of the clock chooser */
   function customMain() {
-    home = customMain;
+    home = customMain; fixedVm = null; pcb = null;
     if (!url()) { mainSheet(); return; }
     get({ a: 'ping' });
     LP.openSheet(`<h2>Custom<span class="sub">Play a friend with different rules.</span></h2>
@@ -492,6 +492,31 @@
     $('#on-x').onclick = LP.closeSheet;
   }
 
+  /** A single gamemode chosen on the play popup (play.js): Create, Join with a code or Open games, with the gamemode already picked. */
+  let fixedVm = null, pcb = null, pback = null;
+  function variantOnline(vm) {
+    fixedVm = vm; pcb = null; pback = null;
+    home = () => variantOnline(vm);
+    if (!url()) { mainSheet(); return; }
+    get({ a: 'ping' });
+    const v = Chess.VARIANTS.find((x) => x[0] === vm);
+    LP.openSheet(`<h2>${esc(v[1])} online<span class="sub">${esc(v[2])}</span></h2>
+      <div class="stack">
+        <button class="btn big primary" id="vo-new">Create a game</button>
+        <button class="btn big" id="vo-join">Join with a code</button>
+        <button class="btn big" id="vo-list">Open games</button>
+        <button class="btn" id="vo-x">Cancel</button>
+      </div>`, true);
+    $('#vo-new').onclick = () => profileName(() => customParams(vm));
+    $('#vo-join').onclick = () => profileName(() => joinSheet());
+    $('#vo-list').onclick = () => profileName(() => listSheet());
+    $('#vo-x').onclick = LP.closeSheet;
+  }
+  /** Asks for a gamemode's settings (Chess960 number, number of checks, a FEN) and hands them to cb(vm, vp); back() runs on Back. */
+  function variantParams(vm, cb, back) { fixedVm = null; pcb = cb; pback = back; customParams(vm); }
+  LP.onlineVariant = variantOnline;
+  LP.variantParams = variantParams;
+
   function customModes() {
     LP.openSheet(`<h2>Create a game<span class="sub">Pick a gamemode.</span></h2>
       <div class="stack">
@@ -506,7 +531,8 @@
   /** Settings of a gamemode (a Chess960 number, the number of checks, a FEN), then the clock and who can join. */
   function customParams(vm, vp, err) {
     const v = Chess.VARIANTS.find((x) => x[0] === vm);
-    if (vm !== 'c960' && vm !== '3check' && vm !== 'fen') { customFinal(vm, ''); return; }
+    const fin = (a, b) => (pcb ? pcb(a, b) : customFinal(a, b));
+    if (vm !== 'c960' && vm !== '3check' && vm !== 'fen') { fin(vm, ''); return; }
     const body = vm === 'c960' ? `<p class="note">Pick a start position from 0 to 959, or leave it empty for a random one. 518 is the normal chess setup.</p>
         <input id="p-in" type="text" inputmode="numeric" maxlength="3" placeholder="Random" autocomplete="off" value="${esc(vp || '')}" style="text-align:center">`
       : vm === '3check' ? `<p class="note">How many checks does it take to win?</p>
@@ -517,21 +543,21 @@
       <div class="row"><button class="btn" id="p-b">Back</button><button class="btn primary" id="p-ok">Next</button></div>`, true);
     let n = +(vp || 3);
     document.querySelectorAll('#p-chips [data-n]').forEach((b) => { b.onclick = () => { n = +b.dataset.n; document.querySelectorAll('#p-chips [data-n]').forEach((x) => x.classList.toggle('on', x === b)); }; });
-    $('#p-b').onclick = customModes;
+    $('#p-b').onclick = () => (pcb ? (pback ? pback() : LP.closeSheet()) : fixedVm ? variantOnline(vm) : customModes());
     $('#p-ok').onclick = () => {
-      if (vm === '3check') { customFinal(vm, String(n)); return; }
+      if (vm === '3check') { fin(vm, String(n)); return; }
       const t = ($('#p-in').value || '').trim();
       if (vm === 'c960') {
-        if (t === '') { customFinal(vm, String(Math.floor(Math.random() * 960))); return; }
+        if (t === '') { fin(vm, String(Math.floor(Math.random() * 960))); return; }
         if (!/^\d{1,3}$/.test(t) || +t > 959) { customParams(vm, t, 'Use a number from 0 to 959.'); return; }
-        customFinal(vm, String(+t)); return;
+        fin(vm, String(+t)); return;
       }
       const probe = new Chess(); probe.mode = 'fen';
       const e = probe.loadFen(t);
       if (e) { customParams(vm, t, e); return; }
       const pr = probe.problems();
       if (pr.length) { customParams(vm, t, pr[0]); return; }
-      customFinal(vm, probe.toFen());
+      fin(vm, probe.toFen());
     };
   }
 
@@ -544,15 +570,13 @@
       <div class="stack" style="margin-top:12px">
         <button class="btn big" id="w-priv"><b>Private</b><small>Only people you give the code to.</small></button>
         <button class="btn big" id="w-pub"><b>Public</b><small>Shows in Open games for anyone.</small></button>
-        <button class="btn big" id="w-cpu"><b>Play the computer</b><small>On this device, no clock.</small></button>
         <div class="row"><button class="btn" id="w-b">Back</button><button class="btn" id="w-x">Cancel</button></div>
       </div>`, true);
     document.querySelectorAll('#c-chips [data-c]').forEach((b) => { b.onclick = () => { cClock = +b.dataset.c; document.querySelectorAll('#c-chips [data-c]').forEach((x) => x.classList.toggle('on', x === b)); }; });
     const mk = (pub) => () => { const c = CLOCKS[cClock]; create({ mode: c[0] ? 'timed' : 'unlimited', base: c[0], inc: c[1], pub, vm, vp }); };
     $('#w-priv').onclick = mk(0);
     $('#w-pub').onclick = mk(1);
-    $('#w-cpu').onclick = () => { LP.closeSheet(); LP.customLocal(vm, vp); };
-    $('#w-b').onclick = () => (vm === 'c960' || vm === '3check' || vm === 'fen' ? customParams(vm, vp) : customModes());
+    $('#w-b').onclick = () => (vm === 'c960' || vm === '3check' || vm === 'fen' ? customParams(vm, vp) : fixedVm ? variantOnline(vm) : customModes());
     $('#w-x').onclick = LP.closeSheet;
   }
 

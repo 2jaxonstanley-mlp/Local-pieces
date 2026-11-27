@@ -53,17 +53,13 @@
   }
   function playPopup() {
     const t = pickTime();
-    LP.openSheet(`<h2>Play<span class="sub">${esc(t.nm)}</span></h2>
-      <div class="stack">
-        <button class="btn big m2-pl m2-pl-local" id="m2-p-local"><b>Local</b><small>Two players on this device.</small></button>
-        <button class="btn big m2-pl m2-pl-online" id="m2-p-online"><b>Online</b><small>Create, join or find a game against a real player.</small></button>
-        <button class="btn big m2-pl m2-pl-bot" id="m2-p-bot"><b>Bot</b><small>Play the computer, from Dumb up to Stockfish.</small></button>
-        <button class="btn" id="m2-p-x">Cancel</button>
-      </div>`, true);
-    $('#m2-p-x').onclick = LP.closeSheet;
-    $('#m2-p-local').onclick = () => { LP.closeSheet(); if (LP.classicPlay) LP.classicPlay('local', t.m, t.tc); };
-    $('#m2-p-bot').onclick = () => { if (LP.classicPlay) LP.classicPlay('bot', t.m, t.tc); };
-    $('#m2-p-online').onclick = () => { if (LP.onlinePlay) LP.onlinePlay(t.tc); };
+    LP.play.popup({
+      title: 'Play', sub: t.nm,
+      zero: t.m === 'basic',   // two computers only in untimed Classic
+      local: () => { LP.closeSheet(); if (LP.classicPlay) LP.classicPlay('local', t.m, t.tc); },
+      bot: (n) => { if (LP.classicPlay) LP.classicPlay(n === 0 ? 'zero' : 'bot', t.m, t.tc); },
+      online: () => { if (LP.onlinePlay) LP.onlinePlay(t.tc); },
+    });
   }
 
   /* ------------------------------------------------------------------ Home: Continue Playing */

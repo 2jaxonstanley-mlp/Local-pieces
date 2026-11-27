@@ -1131,6 +1131,7 @@
     $('#hk-2').onclick = () => pickPiece(2);
     $('#hk-x').onclick = LP.closeSheet;
   }
+  LP.hockeyStart = (players) => pickPiece(players);   // the play popup (play.js): 0, 1 or 2 players
   function pickPiece(players) {
     LP.openSheet(`<h2>Pick the piece<span class="sub">Both sides use it. The Queen and Knight move like they do in chess.</span></h2>
       <div class="stack"><button class="btn big tc" id="hp-q"><b>Queen</b><small>Glides in any straight line. Long moves are very fast.</small></button><button class="btn big tc" id="hp-n"><b>Knight</b><small>Jumps in an L shape. Quick short hops.</small></button><button class="btn big tc" id="hp-k"><b>King</b><small>Glides to any square in its own half. Far squares are fast.</small></button><button class="btn" id="hp-x">Cancel</button></div>`, true);
